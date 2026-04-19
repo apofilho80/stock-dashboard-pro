@@ -848,8 +848,47 @@ with tab_options:
 
 with tab_scanner:
     st.subheader("Scanner")
-    if scan_df is None or scan_df.empty:
-        st.info("Click Run Watchlist Scan to compare the current watchlist.")
+
+    universe = st.selectbox(
+        "Choose universe",
+        ["Watchlist", "Dow 30", "NASDAQ-100", "Russell Filtered"],
+        key="scanner_universe"
+    )
+
+    if universe == "Watchlist":
+        scan_tickers = watchlist
+
+    elif universe == "Dow 30":
+        scan_tickers = [
+            "AAPL","MSFT","AMZN","NVDA","GOOGL","META","BRK-B","JPM","V","UNH",
+            "XOM","PG","MA","HD","CVX","MRK","ABBV","KO","PEP","COST",
+            "WMT","AVGO","ADBE","CRM","BAC","NFLX","AMD","ORCL","CSCO","MCD"
+        ]
+
+    elif universe == "NASDAQ-100":
+        scan_tickers = [
+            "AAPL","MSFT","NVDA","AMZN","META","GOOGL","TSLA","AVGO","COST","ADBE",
+            "NFLX","AMD","INTC","QCOM","AMAT","CSCO","TXN","INTU","ISRG","BKNG",
+            "MU","ORCL","ADP","ADI","LRCX","PANW","KLAC","SNPS","CDNS","MAR"
+        ]
+
+    else:  # Russell Filtered
+        scan_tickers = [
+            "CELH","IOT","FROG","ONTO","QLYS","SAIA","BMI","FN","ALGM","SIMO",
+            "CVCO","LTH","PAYO","PAGS","TMDX","INSP","BRZE","RXST","ACLS","UFPT"
+        ]
+
+    st.caption(f"{len(scan_tickers)} tickers selected for {universe}")
+
+    run_universe_scan = st.button("Run Universe Scan", key="run_universe_scan")
+
+    if run_universe_scan:
+        universe_df = scan_watchlist(scan_tickers, period, fmp_api_key, finnhub_api_key)
+
+        if universe_df is None or universe_df.empty:
+            st.warning("No scan results returned.")
+        else:
+            st.dataframe(universe_df, use_container_width=True, hide_index=True)
     else:
-        st.dataframe(scan_df, use_container_width=True, hide_index=True)
+        st.info("Choose a universe and click Run Universe Scan.")
 
