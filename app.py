@@ -714,11 +714,15 @@ def scan_watchlist(tickers, period, fmp_api_key, finnhub_api_key):
 # =========================
 st.sidebar.title("Controls")
 
-watchlist = ["NVDA", "MSFT", "AAPL", "AMZN", "META", "GOOGL", "AVGO", "MU", "NFLX", "ORCL"]
-selected = st.sidebar.selectbox("Watchlist", watchlist, index=0)
-ticker = st.sidebar.text_input("Ticker", value=selected).upper()
-period = st.sidebar.selectbox("Period", ["1mo", "3mo", "6mo", "1y", "2y", "5y"], index=3)
+# watchlist = ["NVDA", "MSFT", "AAPL", "AMZN", "META", "GOOGL", "AVGO", "MU", "NFLX", "ORCL"]
+# selected = st.sidebar.selectbox("Watchlist", watchlist, index=0)
+# ticker = st.sidebar.text_input("Ticker", value=selected).upper()
 
+
+watchlist = ["NVDA", "MSFT", "AAPL", "AMZN", "META", "GOOGL", "AVGO", "MU", "NFLX", "ORCL"]
+ticker = st.sidebar.text_input("Ticker", value="NVDA").upper()
+period = st.sidebar.selectbox("Period", ["1mo", "3mo", "6mo", "1y", "2y", "5y"], index=3)
+run = st.sidebar.button("Run Analysis", use_container_width=True)
 
 
 fmp_api_key = FMP_API_KEY
