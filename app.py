@@ -724,8 +724,10 @@ period = st.sidebar.selectbox("Period", ["1mo", "3mo", "6mo", "1y", "2y", "5y"],
 fmp_api_key = FMP_API_KEY
 finnhub_api_key = FINNHUB_API_KEY
 
+# run = st.sidebar.button("Run Analysis", use_container_width=True)
+# run_scan = st.sidebar.button("Run Watchlist Scan", use_container_width=True)
+
 run = st.sidebar.button("Run Analysis", use_container_width=True)
-run_scan = st.sidebar.button("Run Watchlist Scan", use_container_width=True)
 
 st.title("📈 Stock Trading Dashboard Pro")
 st.caption("Hybrid FMP + Finnhub + Yahoo Backup engine with technicals, valuation, entry zones, and options ideas.")
@@ -740,9 +742,9 @@ if run:
     if result is None:
         st.error(f"No data found for {ticker}.")
 
-scan_df = None
-if run_scan:
-    scan_df = scan_watchlist(watchlist, period, fmp_api_key, finnhub_api_key)
+# scan_df = None
+# if run_scan:
+#    scan_df = scan_watchlist(watchlist, period, fmp_api_key, finnhub_api_key)
 
 with tab_overview:
     if result is None:
