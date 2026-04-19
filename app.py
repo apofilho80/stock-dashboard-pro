@@ -1,4 +1,3 @@
-
 import math
 import time
 import requests
@@ -20,13 +19,6 @@ st.set_page_config(
     layout="wide"
 )
 
-
-#FMP_API_KEY = "NPokK3Jd0JHioczIHUGC8cfivIE04qiS"
-#FINNHUB_API_KEY = "d7g0q1hr01qqb8rhu0rgd7g0q1hr01qqb8rhu0s0"
-
-
-
-
 # =========================
 # HELPERS
 # =========================
@@ -44,13 +36,6 @@ def fmt_num(value, decimals=2):
     if value is None or (isinstance(value, float) and (math.isnan(value) or math.isinf(value))):
         return "N/A"
     return f"{value:.{decimals}f}"
-
-
-def fmt_pct_from_decimal(value, decimals=1):
-    value = to_float(value)
-    if value is None or (isinstance(value, float) and (math.isnan(value) or math.isinf(value))):
-        return "N/A"
-    return f"{value * 100:.{decimals}f}%"
 
 
 def fmt_large_number(value):
@@ -74,12 +59,6 @@ def first_non_none(*values):
 
 
 def normalize_percent_like(value):
-    """
-    Returns percentage points.
-    Examples:
-    0.669 -> 66.9
-    66.9  -> 66.9
-    """
     value = to_float(value)
     if value is None:
         return None
@@ -464,7 +443,7 @@ def fetch_yahoo_backup_fundamentals(ticker):
 
 @st.cache_data(ttl=600)
 def fetch_fmp_fundamentals(ticker, api_key):
-    if not api_key or api_key == "PASTE_YOUR_FMP_API_KEY_HERE":
+    if not api_key:
         return {}
 
     try:
@@ -482,35 +461,20 @@ def fetch_fmp_fundamentals(ticker, api_key):
 
         return {
             "source": "FMP",
-            "trailingPE": first_non_none(
-                ratios.get("priceEarningsRatioTTM"),
-                metrics.get("peRatioTTM")
-            ),
-            "forwardPE": first_non_none(
-                profile.get("priceEarningsRatio"),
-                None
-            ),
+            "trailingPE": first_non_none(ratios.get("priceEarningsRatioTTM"), metrics.get("peRatioTTM")),
+            "forwardPE": profile.get("priceEarningsRatio"),
             "earningsGrowth": None,
-            "revenueGrowth": first_non_none(
-                metrics.get("revenueGrowth"),
-                None
-            ),
-            "ebitdaMargins": first_non_none(
-                metrics.get("ebitdaMargin"),
-                None
-            ),
+            "revenueGrowth": metrics.get("revenueGrowth"),
+            "ebitdaMargins": metrics.get("ebitdaMargin"),
             "marketCap": profile.get("mktCap"),
             "beta": profile.get("beta"),
-            "fiftyTwoWeekHigh": profile.get("range") and None,
-            "fiftyTwoWeekLow": profile.get("range") and None,
+            "fiftyTwoWeekHigh": None,
+            "fiftyTwoWeekLow": None,
             "enterpriseToEbitda": first_non_none(
                 metrics.get("enterpriseValueOverEBITDATTM"),
                 metrics.get("enterpriseValueOverEBITDA")
             ),
-            "peg": first_non_none(
-                metrics.get("pegRatio"),
-                None
-            )
+            "peg": metrics.get("pegRatio")
         }
     except Exception:
         return {}
@@ -518,7 +482,7 @@ def fetch_fmp_fundamentals(ticker, api_key):
 
 @st.cache_data(ttl=600)
 def fetch_finnhub_fundamentals(ticker, api_key):
-    if not api_key or api_key == "PASTE_YOUR_FINNHUB_API_KEY_HERE":
+    if not api_key:
         return {}
 
     try:
@@ -529,7 +493,6 @@ def fetch_finnhub_fundamentals(ticker, api_key):
         response = requests.get(url, headers=headers, params=params, timeout=20)
         response.raise_for_status()
         data = response.json()
-
         metric = data.get("metric", {})
 
         return {
@@ -613,10 +576,7 @@ def merge_fundamentals(fmp_data, finnhub_data, yahoo_backup):
             finnhub_data.get("enterpriseToEbitda") if finnhub_data else None,
             yahoo_backup.get("enterpriseToEbitda") if yahoo_backup else None
         ),
-        "peg": first_non_none(
-            fmp_data.get("peg") if fmp_data else None,
-            None
-        )
+        "peg": fmp_data.get("peg") if fmp_data else None
     }
 
 
@@ -652,7 +612,6 @@ def load_analysis(ticker, period, fmp_api_key, finnhub_api_key):
     if peg is None and to_float(forward_pe) is not None and to_float(earnings_growth) not in [None, 0]:
         peg = float(forward_pe) / (float(earnings_growth) * 100)
 
-    # Corrected Rule of 40
     rg_pts = normalize_percent_like(revenue_growth)
     em_pts = normalize_percent_like(ebitda_margin)
     rule_of_40 = None if rg_pts is None or em_pts is None else rg_pts + em_pts
@@ -769,128 +728,24 @@ run_scan = st.sidebar.button("Run Watchlist Scan", use_container_width=True)
 st.title("📈 Stock Trading Dashboard Pro")
 st.caption("Hybrid FMP + Finnhub + Yahoo Backup engine with technicals, valuation, entry zones, and options ideas.")
 
-st.title("📈 Stock Trading Dashboard Pro")
-st.caption("Hybrid FMP + Finnhub + Yahoo Backup engine with technicals, valuation, entry zones, and options ideas.")
-
 tab_overview, tab_technical, tab_valuation, tab_options, tab_scanner = st.tabs(
     ["Overview", "Technical", "Valuation", "Options", "Scanner"]
 )
 
-
-if run_scan:
-    scan_df = scan_watchlist(watchlist, period, fmp_api_key, finnhub_api_key)
-    st.subheader("Watchlist Scanner")
-    st.dataframe(scan_df, use_container_width=True, hide_index=True)
-
+result = None
 if run:
     result = load_analysis(ticker, period, fmp_api_key, finnhub_api_key)
-
     if result is None:
         st.error(f"No data found for {ticker}.")
-        st.stop()
 
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Last Close", fmt_num(result["latest_close"]))
-    c2.metric("Trailing P/E", fmt_num(result["trailing_pe"]))
-    c3.metric("Forward P/E", fmt_num(result["forward_pe"]))
-    c4.metric("EV / EBITDA", fmt_num(result["ev_to_ebitda"]))
-
-    c5, c6, c7, c8 = st.columns(4)
-    c5.metric("PEG", fmt_num(result["peg"]))
-    c6.metric("Rule of 40", fmt_num(result["rule_of_40"]))
-    c7.metric("Trend", result["trend_state"])
-    c8.metric("Timing", f'{result["timing_score"]} ({result["timing_label"]})')
-
-    st.subheader("Decision Panel")
-    d1, d2 = st.columns(2)
-    with d1:
-        st.write(f"**Data Source:** {result['source_used']}")
-        st.write(f"**Valuation Verdict:** {result['valuation']}")
-        st.write(f"**Smart Valuation Style:** {result['smart_view']['valuation_style']}")
-        st.write(f"**Growth-Adjusted View:** {result['smart_view']['growth_adjusted_view']}")
-    with d2:
-        st.write(f"**Setup Verdict:** {result['setup_verdict']}")
-        st.write(f"**Trade Decision:** {result['trade_view']}")
-        st.write(f"**Options Idea:** {result['options_view']}")
-
-    st.subheader("Entry Zones")
-    z1, z2, z3, z4 = st.columns(4)
-    z1.metric("Support 1", fmt_num(result["zones"]["support_1"]))
-    z2.metric("Support 2", fmt_num(result["zones"]["support_2"]))
-    z3.metric("Resistance 1", fmt_num(result["zones"]["resistance_1"]))
-    z4.metric("Resistance 2", fmt_num(result["zones"]["resistance_2"]))
-    st.write(f"**Buy Zone:** {fmt_num(result['zones']['buy_zone_low'])} - {fmt_num(result['zones']['buy_zone_high'])}")
-
-    st.subheader("Options Optimizer")
-    o1, o2, o3, o4 = st.columns(4)
-    o1.metric("Sell Put", str(result["opt"].get("spread_sell", "N/A")))
-    o2.metric("Buy Put", str(result["opt"].get("spread_buy", "N/A")))
-    o3.metric("Width", str(result["opt"].get("spread_width", "N/A")))
-    o4.metric("DTE", result["opt"].get("dte", "N/A"))
-    st.write(f"**Spread Idea:** {result['opt'].get('idea', 'N/A')}")
-    st.write(f"**ITM LEAPS Reference Strike:** {result['opt'].get('leaps_strike', 'N/A')}")
-
-    st.subheader("EV / EBITDA Relative View")
-    st.write(f"**Status:** {result['ev_rel']['status']}")
-    st.write(f"**Comparison:** {result['ev_rel']['comparison']}")
-
-    st.subheader("Fundamentals Table")
-    st.dataframe(result["fundamentals"], use_container_width=True, hide_index=True)
-
-    df = result["data"]
-
-    st.subheader("Price and EMAs")
-    fig1, ax1 = plt.subplots(figsize=(12, 5))
-    ax1.plot(df.index, df["Close"], label=f"{ticker} Close")
-    ax1.plot(df.index, df["EMA50"], label="EMA 50")
-    ax1.plot(df.index, df["EMA200"], label="EMA 200")
-    ax1.axhspan(result["zones"]["buy_zone_low"], result["zones"]["buy_zone_high"], alpha=0.12)
-    ax1.set_title(
-        f"{ticker} | P/E: {fmt_num(result['trailing_pe'])} | "
-        f"Fwd P/E: {fmt_num(result['forward_pe'])} | "
-        f"EV/EBITDA: {fmt_num(result['ev_to_ebitda'])} | "
-        f"PEG: {fmt_num(result['peg'])}"
-    )
-    ax1.set_ylabel("Price ($)")
-    ax1.grid(True)
-    ax1.legend()
-    st.pyplot(fig1)
-
-    st.subheader("RSI")
-    fig2, ax2 = plt.subplots(figsize=(12, 3.5))
-    ax2.plot(df.index, df["RSI"], label="RSI")
-    ax2.axhline(70, linestyle="--", alpha=0.6)
-    ax2.axhline(30, linestyle="--", alpha=0.6)
-    ax2.set_ylabel("RSI")
-    ax2.grid(True)
-    ax2.legend()
-    st.pyplot(fig2)
-
-    st.subheader("MACD")
-    fig3, ax3 = plt.subplots(figsize=(12, 4))
-    ax3.plot(df.index, df["MACD"], label="MACD")
-    ax3.plot(df.index, df["Signal_Line"], label="Signal Line")
-    ax3.bar(df.index, df["Impulse_MACD"], label="Impulse MACD", alpha=0.5)
-    ax3.grid(True)
-    ax3.legend()
-    st.pyplot(fig3)
-
-else:
-    st.info("Choose a ticker in the sidebar and click Run Analysis.")
+scan_df = None
+if run_scan:
+    scan_df = scan_watchlist(watchlist, period, fmp_api_key, finnhub_api_key)
 
 with tab_overview:
-    if run_scan:
-        scan_df = scan_watchlist(watchlist, period, fmp_api_key, finnhub_api_key)
-        st.subheader("Watchlist Scanner")
-        st.dataframe(scan_df, use_container_width=True, hide_index=True)
-
-    if run:
-        result = load_analysis(ticker, period, fmp_api_key, finnhub_api_key)
-
-        if result is None:
-            st.error(f"No data found for {ticker}.")
-            st.stop()
-
+    if result is None:
+        st.info("Choose a ticker in the sidebar and click Run Analysis.")
+    else:
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("Last Close", fmt_num(result["latest_close"]))
         c2.metric("Trailing P/E", fmt_num(result["trailing_pe"]))
@@ -914,7 +769,85 @@ with tab_overview:
             st.write(f"**Setup Verdict:** {result['setup_verdict']}")
             st.write(f"**Trade Decision:** {result['trade_view']}")
             st.write(f"**Options Idea:** {result['options_view']}")
-    else:
-        st.info("Choose a ticker in the sidebar and click Run Analysis.")
 
+        st.subheader("Entry Zones")
+        z1, z2, z3, z4 = st.columns(4)
+        z1.metric("Support 1", fmt_num(result["zones"]["support_1"]))
+        z2.metric("Support 2", fmt_num(result["zones"]["support_2"]))
+        z3.metric("Resistance 1", fmt_num(result["zones"]["resistance_1"]))
+        z4.metric("Resistance 2", fmt_num(result["zones"]["resistance_2"]))
+        st.write(f"**Buy Zone:** {fmt_num(result['zones']['buy_zone_low'])} - {fmt_num(result['zones']['buy_zone_high'])}")
+
+with tab_technical:
+    if result is None:
+        st.info("Run Analysis to view charts.")
+    else:
+        df = result["data"]
+
+        st.subheader("Price and EMAs")
+        fig1, ax1 = plt.subplots(figsize=(12, 5))
+        ax1.plot(df.index, df["Close"], label=f"{ticker} Close")
+        ax1.plot(df.index, df["EMA50"], label="EMA 50")
+        ax1.plot(df.index, df["EMA200"], label="EMA 200")
+        ax1.axhspan(result["zones"]["buy_zone_low"], result["zones"]["buy_zone_high"], alpha=0.12)
+        ax1.set_title(
+            f"{ticker} | P/E: {fmt_num(result['trailing_pe'])} | "
+            f"Fwd P/E: {fmt_num(result['forward_pe'])} | "
+            f"EV/EBITDA: {fmt_num(result['ev_to_ebitda'])} | "
+            f"PEG: {fmt_num(result['peg'])}"
+        )
+        ax1.set_ylabel("Price ($)")
+        ax1.grid(True)
+        ax1.legend()
+        st.pyplot(fig1)
+
+        st.subheader("RSI")
+        fig2, ax2 = plt.subplots(figsize=(12, 3.5))
+        ax2.plot(df.index, df["RSI"], label="RSI")
+        ax2.axhline(70, linestyle="--", alpha=0.6)
+        ax2.axhline(30, linestyle="--", alpha=0.6)
+        ax2.set_ylabel("RSI")
+        ax2.grid(True)
+        ax2.legend()
+        st.pyplot(fig2)
+
+        st.subheader("MACD")
+        fig3, ax3 = plt.subplots(figsize=(12, 4))
+        ax3.plot(df.index, df["MACD"], label="MACD")
+        ax3.plot(df.index, df["Signal_Line"], label="Signal Line")
+        ax3.bar(df.index, df["Impulse_MACD"], label="Impulse MACD", alpha=0.5)
+        ax3.grid(True)
+        ax3.legend()
+        st.pyplot(fig3)
+
+with tab_valuation:
+    if result is None:
+        st.info("Run Analysis to view valuation.")
+    else:
+        st.subheader("Fundamentals Table")
+        st.dataframe(result["fundamentals"], use_container_width=True, hide_index=True)
+
+        st.subheader("EV / EBITDA Relative View")
+        st.write(f"**Status:** {result['ev_rel']['status']}")
+        st.write(f"**Comparison:** {result['ev_rel']['comparison']}")
+
+with tab_options:
+    if result is None:
+        st.info("Run Analysis to view options ideas.")
+    else:
+        st.subheader("Options Optimizer")
+        o1, o2, o3, o4 = st.columns(4)
+        o1.metric("Sell Put", str(result["opt"].get("spread_sell", "N/A")))
+        o2.metric("Buy Put", str(result["opt"].get("spread_buy", "N/A")))
+        o3.metric("Width", str(result["opt"].get("spread_width", "N/A")))
+        o4.metric("DTE", result["opt"].get("dte", "N/A"))
+        st.write(f"**Spread Idea:** {result['opt'].get('idea', 'N/A')}")
+        st.write(f"**ITM LEAPS Reference Strike:** {result['opt'].get('leaps_strike', 'N/A')}")
+
+with tab_scanner:
+    st.subheader("Scanner")
+    if scan_df is None or scan_df.empty:
+        st.info("Click Run Watchlist Scan to compare the current watchlist.")
+    else:
+        st.dataframe(scan_df, use_container_width=True, hide_index=True)
 
