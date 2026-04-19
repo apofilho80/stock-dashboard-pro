@@ -769,6 +769,14 @@ run_scan = st.sidebar.button("Run Watchlist Scan", use_container_width=True)
 st.title("📈 Stock Trading Dashboard Pro")
 st.caption("Hybrid FMP + Finnhub + Yahoo Backup engine with technicals, valuation, entry zones, and options ideas.")
 
+st.title("📈 Stock Trading Dashboard Pro")
+st.caption("Hybrid FMP + Finnhub + Yahoo Backup engine with technicals, valuation, entry zones, and options ideas.")
+
+tab_overview, tab_technical, tab_valuation, tab_options, tab_scanner = st.tabs(
+    ["Overview", "Technical", "Valuation", "Options", "Scanner"]
+)
+
+
 if run_scan:
     scan_df = scan_watchlist(watchlist, period, fmp_api_key, finnhub_api_key)
     st.subheader("Watchlist Scanner")
@@ -869,3 +877,44 @@ if run:
 
 else:
     st.info("Choose a ticker in the sidebar and click Run Analysis.")
+
+with tab_overview:
+    if run_scan:
+        scan_df = scan_watchlist(watchlist, period, fmp_api_key, finnhub_api_key)
+        st.subheader("Watchlist Scanner")
+        st.dataframe(scan_df, use_container_width=True, hide_index=True)
+
+    if run:
+        result = load_analysis(ticker, period, fmp_api_key, finnhub_api_key)
+
+        if result is None:
+            st.error(f"No data found for {ticker}.")
+            st.stop()
+
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Last Close", fmt_num(result["latest_close"]))
+        c2.metric("Trailing P/E", fmt_num(result["trailing_pe"]))
+        c3.metric("Forward P/E", fmt_num(result["forward_pe"]))
+        c4.metric("EV / EBITDA", fmt_num(result["ev_to_ebitda"]))
+
+        c5, c6, c7, c8 = st.columns(4)
+        c5.metric("PEG", fmt_num(result["peg"]))
+        c6.metric("Rule of 40", fmt_num(result["rule_of_40"]))
+        c7.metric("Trend", result["trend_state"])
+        c8.metric("Timing", f'{result["timing_score"]} ({result["timing_label"]})')
+
+        st.subheader("Decision Panel")
+        d1, d2 = st.columns(2)
+        with d1:
+            st.write(f"**Data Source:** {result['source_used']}")
+            st.write(f"**Valuation Verdict:** {result['valuation']}")
+            st.write(f"**Smart Valuation Style:** {result['smart_view']['valuation_style']}")
+            st.write(f"**Growth-Adjusted View:** {result['smart_view']['growth_adjusted_view']}")
+        with d2:
+            st.write(f"**Setup Verdict:** {result['setup_verdict']}")
+            st.write(f"**Trade Decision:** {result['trade_view']}")
+            st.write(f"**Options Idea:** {result['options_view']}")
+    else:
+        st.info("Choose a ticker in the sidebar and click Run Analysis.")
+
+
