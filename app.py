@@ -719,8 +719,10 @@ selected = st.sidebar.selectbox("Watchlist", watchlist, index=0)
 ticker = st.sidebar.text_input("Ticker", value=selected).upper()
 period = st.sidebar.selectbox("Period", ["1mo", "3mo", "6mo", "1y", "2y", "5y"], index=3)
 
-fmp_api_key = st.sidebar.text_input("FMP API Key", value=FMP_API_KEY, type="password")
-finnhub_api_key = st.sidebar.text_input("Finnhub API Key", value=FINNHUB_API_KEY, type="password")
+
+
+fmp_api_key = FMP_API_KEY
+finnhub_api_key = FINNHUB_API_KEY
 
 run = st.sidebar.button("Run Analysis", use_container_width=True)
 run_scan = st.sidebar.button("Run Watchlist Scan", use_container_width=True)
