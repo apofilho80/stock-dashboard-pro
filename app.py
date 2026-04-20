@@ -395,11 +395,102 @@ def ev_ebitda_relative_view(current_ev_ebitda):
 
 
 # =========================
+# OPTIONS / IV HELPERS
+# =========================
+def classify_iv(iv):
+    iv = to_float(iv)
+    if iv is None:
+        return "N/A"
+    if iv < 0.25:
+        return "Low IV"
+    if iv < 0.45:
+        return "Moderate IV"
+    return "High IV"
+
+
+@st.cache_data(ttl=900)
+def fetch_iv_data_yahoo(ticker):
+    try:
+        tk = yf.Ticker(ticker)
+        expirations = tk.options
+
+        if not expirations:
+            return {
+                "atm_iv": None,
+                "iv_percentile_approx": None,
+                "iv_regime": "N/A",
+                "iv_note": "No option expirations available from Yahoo"
+            }
+
+        hist = tk.history(period="5d")
+        if hist.empty:
+            return {
+                "atm_iv": None,
+                "iv_percentile_approx": None,
+                "iv_regime": "N/A",
+                "iv_note": "No recent price available for IV calculation"
+            }
+
+        spot = float(hist["Close"].iloc[-1])
+
+        nearest_exp = expirations[0]
+        chain = tk.option_chain(nearest_exp)
+        calls = chain.calls.copy()
+
+        if calls.empty or "strike" not in calls.columns or "impliedVolatility" not in calls.columns:
+            return {
+                "atm_iv": None,
+                "iv_percentile_approx": None,
+                "iv_regime": "N/A",
+                "iv_note": "No usable call IV data from Yahoo"
+            }
+
+        calls["distance"] = (calls["strike"] - spot).abs()
+        atm_row = calls.sort_values("distance").iloc[0]
+        atm_iv = to_float(atm_row.get("impliedVolatility"))
+
+        atm_ivs = []
+        for exp in expirations[:8]:
+            try:
+                ch = tk.option_chain(exp)
+                c = ch.calls.copy()
+                if c.empty:
+                    continue
+                c["distance"] = (c["strike"] - spot).abs()
+                row = c.sort_values("distance").iloc[0]
+                iv_val = to_float(row.get("impliedVolatility"))
+                if iv_val is not None and iv_val > 0:
+                    atm_ivs.append(iv_val)
+            except Exception:
+                continue
+
+        iv_percentile_approx = None
+        if atm_iv is not None and len(atm_ivs) >= 3:
+            arr = np.array(sorted(atm_ivs))
+            iv_percentile_approx = float((arr <= atm_iv).sum() / len(arr) * 100)
+
+        return {
+            "atm_iv": atm_iv,
+            "iv_percentile_approx": iv_percentile_approx,
+            "iv_regime": classify_iv(atm_iv),
+            "iv_note": "IV percentile is approximate (based on available expirations, not 1-year historical IV)"
+        }
+
+    except Exception:
+        return {
+            "atm_iv": None,
+            "iv_percentile_approx": None,
+            "iv_regime": "N/A",
+            "iv_note": "Yahoo options data unavailable"
+        }
+
+
+# =========================
 # DATA FETCHERS
 # =========================
 @st.cache_data(ttl=600)
 def fetch_price_data_yahoo(ticker, period):
-    for attempt in range(2):
+    for _ in range(2):
         try:
             df = yf.download(
                 ticker,
@@ -609,7 +700,7 @@ def load_analysis(ticker, period, fmp_api_key, finnhub_api_key):
     ev_to_ebitda = data.get("enterpriseToEbitda")
     peg = data.get("peg")
 
-    if peg is None and to_float(forward_pe) is not None and to_float(earnings_growth) not in [None, 0]:
+    if peg is None and to_float(forward_pe) is not in [None] and to_float(earnings_growth) not in [None, 0]:
         peg = float(forward_pe) / (float(earnings_growth) * 100)
 
     rg_pts = normalize_percent_like(revenue_growth)
@@ -638,6 +729,7 @@ def load_analysis(ticker, period, fmp_api_key, finnhub_api_key):
     zones = entry_zones(stock_data)
     opt = options_optimizer(latest_close, trend_state, setup_verdict, timing_label)
     ev_rel = ev_ebitda_relative_view(ev_to_ebitda)
+    iv_data = fetch_iv_data_yahoo(ticker)
 
     fundamentals = pd.DataFrame([
         ["Data Source", data.get("source_used")],
@@ -678,6 +770,10 @@ def load_analysis(ticker, period, fmp_api_key, finnhub_api_key):
         "opt": opt,
         "ev_rel": ev_rel,
         "source_used": data.get("source_used"),
+        "atm_iv": iv_data.get("atm_iv"),
+        "iv_percentile_approx": iv_data.get("iv_percentile_approx"),
+        "iv_regime": iv_data.get("iv_regime"),
+        "iv_note": iv_data.get("iv_note"),
     }
 
 
@@ -714,25 +810,18 @@ def scan_watchlist(tickers, period, fmp_api_key, finnhub_api_key):
 # =========================
 st.sidebar.title("Controls")
 
-# watchlist = ["NVDA", "MSFT", "AAPL", "AMZN", "META", "GOOGL", "AVGO", "MU", "NFLX", "ORCL"]
-# selected = st.sidebar.selectbox("Watchlist", watchlist, index=0)
-# ticker = st.sidebar.text_input("Ticker", value=selected).upper()
-
-
 watchlist = ["NVDA", "MSFT", "AAPL", "AMZN", "META", "GOOGL", "AVGO", "MU", "NFLX", "ORCL"]
 ticker = st.sidebar.text_input("Ticker", value="NVDA").upper()
 period = st.sidebar.selectbox("Period", ["1mo", "3mo", "6mo", "1y", "2y", "5y"], index=3)
 
-
-
 fmp_api_key = FMP_API_KEY
 finnhub_api_key = FINNHUB_API_KEY
 
-# run = st.sidebar.button("Run Analysis", use_container_width=True)
-# run_scan = st.sidebar.button("Run Watchlist Scan", use_container_width=True)
-
 run = st.sidebar.button("Run Analysis", use_container_width=True)
 
+# =========================
+# MAIN UI
+# =========================
 st.title("📈 Stock Trading Dashboard Pro")
 st.caption("Hybrid FMP + Finnhub + Yahoo Backup engine with technicals, valuation, entry zones, and options ideas.")
 
@@ -745,10 +834,6 @@ if run:
     result = load_analysis(ticker, period, fmp_api_key, finnhub_api_key)
     if result is None:
         st.error(f"No data found for {ticker}.")
-
-# scan_df = None
-# if run_scan:
-#    scan_df = scan_watchlist(watchlist, period, fmp_api_key, finnhub_api_key)
 
 with tab_overview:
     if result is None:
@@ -849,8 +934,42 @@ with tab_options:
         o2.metric("Buy Put", str(result["opt"].get("spread_buy", "N/A")))
         o3.metric("Width", str(result["opt"].get("spread_width", "N/A")))
         o4.metric("DTE", result["opt"].get("dte", "N/A"))
+
         st.write(f"**Spread Idea:** {result['opt'].get('idea', 'N/A')}")
         st.write(f"**ITM LEAPS Reference Strike:** {result['opt'].get('leaps_strike', 'N/A')}")
+
+        st.subheader("Implied Volatility")
+        iv1, iv2, iv3 = st.columns(3)
+        iv1.metric("ATM IV", "N/A" if result["atm_iv"] is None else f"{result['atm_iv'] * 100:.1f}%")
+        iv2.metric(
+            "IV Percentile (Approx.)",
+            "N/A" if result["iv_percentile_approx"] is None else f"{result['iv_percentile_approx']:.0f}"
+        )
+        iv3.metric("IV Regime", result["iv_regime"])
+
+        st.caption(result["iv_note"])
+
+        st.subheader("IV-Based Interpretation")
+        atm_iv = result["atm_iv"]
+        iv_pct = result["iv_percentile_approx"]
+
+        if atm_iv is None:
+            st.write("**IV Takeaway:** IV data unavailable for this ticker from Yahoo.")
+        else:
+            if iv_pct is not None:
+                if iv_pct >= 70:
+                    st.write("**IV Takeaway:** Volatility is relatively elevated. Better environment for premium selling strategies.")
+                elif iv_pct <= 30:
+                    st.write("**IV Takeaway:** Volatility is relatively low. Better environment for directional long options like ITM LEAPS.")
+                else:
+                    st.write("**IV Takeaway:** Volatility is in a middle range. Use balanced strategy selection.")
+            else:
+                if atm_iv >= 0.45:
+                    st.write("**IV Takeaway:** High IV environment. Bull put spreads may be more attractive than outright call buying.")
+                elif atm_iv <= 0.25:
+                    st.write("**IV Takeaway:** Lower IV environment. Long calls / LEAPS are relatively more attractive.")
+                else:
+                    st.write("**IV Takeaway:** Moderate IV environment. Either defined-risk spreads or LEAPS can work depending on setup.")
 
 with tab_scanner:
     st.subheader("Scanner")
@@ -863,22 +982,19 @@ with tab_scanner:
 
     if universe == "Watchlist":
         scan_tickers = watchlist
-
     elif universe == "Dow 30":
         scan_tickers = [
             "AAPL","MSFT","AMZN","NVDA","GOOGL","META","BRK-B","JPM","V","UNH",
             "XOM","PG","MA","HD","CVX","MRK","ABBV","KO","PEP","COST",
             "WMT","AVGO","ADBE","CRM","BAC","NFLX","AMD","ORCL","CSCO","MCD"
         ]
-
     elif universe == "NASDAQ-100":
         scan_tickers = [
             "AAPL","MSFT","NVDA","AMZN","META","GOOGL","TSLA","AVGO","COST","ADBE",
             "NFLX","AMD","INTC","QCOM","AMAT","CSCO","TXN","INTU","ISRG","BKNG",
             "MU","ORCL","ADP","ADI","LRCX","PANW","KLAC","SNPS","CDNS","MAR"
         ]
-
-    else:  # Russell Filtered
+    else:
         scan_tickers = [
             "CELH","IOT","FROG","ONTO","QLYS","SAIA","BMI","FN","ALGM","SIMO",
             "CVCO","LTH","PAYO","PAGS","TMDX","INSP","BRZE","RXST","ACLS","UFPT"
@@ -897,4 +1013,3 @@ with tab_scanner:
             st.dataframe(universe_df, use_container_width=True, hide_index=True)
     else:
         st.info("Choose a universe and click Run Universe Scan.")
-
