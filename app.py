@@ -700,9 +700,15 @@ def load_analysis(ticker, period, fmp_api_key, finnhub_api_key):
     ev_to_ebitda = data.get("enterpriseToEbitda")
     peg = data.get("peg")
 
-    if peg is None and to_float(forward_pe) is not in [None] and to_float(earnings_growth) not in [None, 0]:
-        peg = float(forward_pe) / (float(earnings_growth) * 100)
+    £ if peg is None and to_float(forward_pe) is not in [None] and to_float(earnings_growth) not in [None, 0]:
 
+
+    forward_pe_val = to_float(forward_pe)
+    earnings_growth_val = to_float(earnings_growth)
+
+    if peg is None and forward_pe_val not in [None] and earnings_growth_val not in [None, 0]:
+        peg = float(forward_pe_val) / (float(earnings_growth_val) * 100)
+     
     rg_pts = normalize_percent_like(revenue_growth)
     em_pts = normalize_percent_like(ebitda_margin)
     rule_of_40 = None if rg_pts is None or em_pts is None else rg_pts + em_pts
