@@ -700,7 +700,7 @@ def load_analysis(ticker, period, fmp_api_key, finnhub_api_key):
     ev_to_ebitda = data.get("enterpriseToEbitda")
     peg = data.get("peg")
 
-    £ if peg is None and to_float(forward_pe) is not in [None] and to_float(earnings_growth) not in [None, 0]:
+    # if peg is None and to_float(forward_pe) is not in [None] and to_float(earnings_growth) not in [None, 0]:
 
 
     forward_pe_val = to_float(forward_pe)
