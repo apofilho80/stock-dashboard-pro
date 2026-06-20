@@ -7,8 +7,7 @@ import yfinance as yf
 import matplotlib.pyplot as plt
 import streamlit as st
 
-MP_API_KEY = "NPokK3Jd0JHioczIHUGC8cfivIE04qiS"
-FINNHUB_API_KEY = "d7g0q1hr01qqb8rhu0rgd7g0q1hr01qqb8rhu0s0"
+
 
 # =========================
 # CONFIG
