@@ -819,8 +819,9 @@ watchlist = ["NVDA", "MSFT", "AAPL", "AMZN", "META", "GOOGL", "AVGO", "MU", "NFL
 ticker = st.sidebar.text_input("Ticker", value="NVDA").upper()
 period = st.sidebar.selectbox("Period", ["1mo", "3mo", "6mo", "1y", "2y", "5y"], index=3)
 
-fmp_api_key = FMP_API_KEY
-finnhub_api_key = FINNHUB_API_KEY
+MP_API_KEY = "NPokK3Jd0JHioczIHUGC8cfivIE04qiS"
+FINNHUB_API_KEY = "d7g0q1hr01qqb8rhu0rgd7g0q1hr01qqb8rhu0s0"
+
 
 run = st.sidebar.button("Run Analysis", use_container_width=True)
 
