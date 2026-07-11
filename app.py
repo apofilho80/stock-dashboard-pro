@@ -1,5 +1,11 @@
+Library
+/
+stock_dashboard_pro_v4_quality_valuation_iphone.py
+
+
 import math
 import time
+import html
 import requests
 import numpy as np
 import pandas as pd
@@ -7,16 +13,203 @@ import yfinance as yf
 import matplotlib.pyplot as plt
 import streamlit as st
 
-
+FMP_API_KEY = st.secrets.get("FMP_API_KEY", "")
+FINNHUB_API_KEY = st.secrets.get("FINNHUB_API_KEY", "")
 
 # =========================
 # CONFIG
 # =========================
 st.set_page_config(
-    page_title="Stock Trading Dashboard Pro",
+    page_title="Stock Dashboard Pro v4",
     page_icon="📈",
     layout="wide"
 )
+
+# =========================
+# MOBILE / UI CSS
+# =========================
+st.markdown("""
+<style>
+.decision-line {
+    font-size: 1.08rem;
+    line-height: 1.65;
+    margin-bottom: 0.65rem;
+}
+
+.company-name {
+    font-size: 2.1rem;
+    font-weight: 700;
+    margin-bottom: 0.25rem;
+}
+
+.earnings-line {
+    font-size: 1.05rem;
+    margin-bottom: 1.2rem;
+}
+
+/* Responsive overview grid: four columns on desktop, two on iPhone. */
+.metric-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 1.35rem 2rem;
+    margin: 1rem 0 1.6rem 0;
+}
+
+.metric-card {
+    min-width: 0;
+    padding: 0.2rem 0;
+}
+
+.metric-label {
+    color: rgba(250, 250, 250, 0.72);
+    font-size: 0.95rem;
+    line-height: 1.25;
+    margin-bottom: 0.35rem;
+}
+
+.metric-value {
+    color: #fafafa;
+    font-size: 2.25rem;
+    font-weight: 400;
+    line-height: 1.12;
+    overflow-wrap: anywhere;
+}
+
+
+.score-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 1rem;
+    margin: 0.8rem 0 1.4rem 0;
+}
+
+.score-card {
+    border: 1px solid rgba(255,255,255,0.14);
+    border-radius: 0.75rem;
+    padding: 1rem;
+    background: rgba(255,255,255,0.025);
+}
+
+.score-label {
+    font-size: 0.92rem;
+    color: rgba(250,250,250,0.72);
+    margin-bottom: 0.25rem;
+}
+
+.score-value {
+    font-size: 2.15rem;
+    font-weight: 700;
+    line-height: 1.05;
+}
+
+.score-grade {
+    font-size: 0.95rem;
+    margin-top: 0.35rem;
+}
+
+.score-coverage {
+    font-size: 0.78rem;
+    color: rgba(250,250,250,0.58);
+    margin-top: 0.25rem;
+}
+
+@media (max-width: 768px) {
+    /* Approximately 20% larger than the prior iPhone typography. */
+    .decision-line {
+        font-size: 1.416rem !important;
+        line-height: 1.75 !important;
+        margin-bottom: 0.96rem !important;
+    }
+
+    .company-name {
+        font-size: 2.64rem !important;
+        line-height: 1.12 !important;
+    }
+
+    .earnings-line {
+        font-size: 1.344rem !important;
+        line-height: 1.45 !important;
+        margin-bottom: 1.35rem !important;
+    }
+
+    .metric-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+        column-gap: 1.25rem !important;
+        row-gap: 1.8rem !important;
+        margin-top: 0.8rem !important;
+    }
+
+    .metric-label {
+        font-size: 1.14rem !important;
+        line-height: 1.25 !important;
+    }
+
+    .metric-value {
+        font-size: 2.58rem !important;
+        line-height: 1.08 !important;
+    }
+
+    .score-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+        gap: 0.9rem !important;
+    }
+
+    .score-card {
+        padding: 0.9rem !important;
+    }
+
+    .score-label {
+        font-size: 1.08rem !important;
+    }
+
+    .score-value {
+        font-size: 2.5rem !important;
+    }
+
+    .score-grade {
+        font-size: 1.05rem !important;
+    }
+
+    .score-coverage {
+        font-size: 0.9rem !important;
+    }
+
+    /* Increase common Streamlit text controls by about 20% on phones. */
+    div[data-testid="stMarkdownContainer"] p,
+    div[data-testid="stMarkdownContainer"] li,
+    div[data-testid="stCaptionContainer"],
+    div[data-testid="stAlertContainer"],
+    div[data-testid="stExpander"] summary,
+    div[data-testid="stDataFrame"] {
+        font-size: 1.2em !important;
+    }
+
+    .stTabs [data-baseweb="tab"] {
+        font-size: 1.05rem !important;
+        padding-left: 0.55rem !important;
+        padding-right: 0.55rem !important;
+    }
+
+    h1 { font-size: 2.4rem !important; }
+    h2 { font-size: 2.0rem !important; }
+    h3 { font-size: 1.6rem !important; }
+}
+
+@media (max-width: 390px) {
+    .metric-grid {
+        column-gap: 0.9rem !important;
+    }
+
+    .metric-label {
+        font-size: 1.05rem !important;
+    }
+
+    .metric-value {
+        font-size: 2.25rem !important;
+    }
+}
+</style>
+""", unsafe_allow_html=True)
 
 # =========================
 # HELPERS
@@ -62,6 +255,320 @@ def normalize_percent_like(value):
     if value is None:
         return None
     return value * 100 if abs(value) <= 1 else value
+
+
+def render_overview_metrics(result):
+    """Render four desktop columns and two mobile columns."""
+    timing_score = result.get("timing_score")
+    timing_label = result.get("timing_label", "N/A")
+    timing_value = (
+        f"{timing_score} ({timing_label})"
+        if timing_score is not None
+        else "N/A"
+    )
+
+    metrics = [
+        ("Last Close", fmt_num(result.get("latest_close"))),
+        ("Trailing P/E", fmt_num(result.get("trailing_pe"))),
+        ("Forward P/E", fmt_num(result.get("forward_pe"))),
+        ("EV / EBITDA", fmt_num(result.get("ev_to_ebitda"))),
+        ("PEG", fmt_num(result.get("peg"))),
+        ("Rule of 40", fmt_num(result.get("rule_of_40"))),
+        ("Trend", result.get("trend_state", "N/A")),
+        ("Timing", timing_value),
+    ]
+
+    cards = []
+    for label, value in metrics:
+        cards.append(
+            "<div class='metric-card'>"
+            f"<div class='metric-label'>{html.escape(str(label))}</div>"
+            f"<div class='metric-value'>{html.escape(str(value))}</div>"
+            "</div>"
+        )
+
+    st.markdown(
+        f"<div class='metric-grid'>{''.join(cards)}</div>",
+        unsafe_allow_html=True,
+    )
+
+
+def clamp(value, low=0.0, high=100.0):
+    value = to_float(value)
+    if value is None:
+        return None
+    return max(low, min(high, value))
+
+
+def linear_score(value, bad, good, higher_is_better=True):
+    value = to_float(value)
+    if value is None or not math.isfinite(value) or bad == good:
+        return None
+    if higher_is_better:
+        score = (value - bad) / (good - bad) * 100
+    else:
+        score = (bad - value) / (bad - good) * 100
+    return clamp(score)
+
+
+def weighted_available_score(components):
+    valid = [
+        item for item in components
+        if item.get("score") is not None and item.get("weight", 0) > 0
+    ]
+    total_possible_weight = sum(item.get("weight", 0) for item in components)
+    valid_weight = sum(item["weight"] for item in valid)
+    if valid_weight <= 0:
+        return None, 0.0
+    score = sum(item["score"] * item["weight"] for item in valid) / valid_weight
+    coverage = valid_weight / total_possible_weight * 100 if total_possible_weight > 0 else 0.0
+    return round(score, 1), round(coverage, 0)
+
+
+def score_grade(score):
+    score = to_float(score)
+    if score is None:
+        return "Insufficient data"
+    if score >= 90:
+        return "Excellent"
+    if score >= 80:
+        return "Very Good"
+    if score >= 70:
+        return "Good"
+    if score >= 60:
+        return "Fair"
+    if score >= 45:
+        return "Weak"
+    return "Poor"
+
+
+def timing_score_to_100(raw_score):
+    raw_score = to_float(raw_score)
+    if raw_score is None:
+        return None
+    return clamp((raw_score + 5.0) / 12.0 * 100.0)
+
+
+def calculate_quality_score(metrics):
+    revenue_growth_pct = normalize_percent_like(metrics.get("revenue_growth"))
+    earnings_growth_pct = normalize_percent_like(metrics.get("earnings_growth"))
+    gross_margin_pct = normalize_percent_like(metrics.get("gross_margin"))
+    operating_margin_pct = normalize_percent_like(metrics.get("operating_margin"))
+    ebitda_margin_pct = normalize_percent_like(metrics.get("ebitda_margin"))
+    net_margin_pct = normalize_percent_like(metrics.get("net_margin"))
+    roe_pct = normalize_percent_like(metrics.get("roe"))
+    roa_pct = normalize_percent_like(metrics.get("roa"))
+    fcf_margin_pct = normalize_percent_like(metrics.get("fcf_margin"))
+    debt_to_ebitda = to_float(metrics.get("debt_to_ebitda"))
+    current_ratio = to_float(metrics.get("current_ratio"))
+
+    profitability_components = [
+        {"label": "Gross Margin", "score": linear_score(gross_margin_pct, 15, 70), "weight": 6},
+        {"label": "Operating Margin", "score": linear_score(operating_margin_pct, 0, 35), "weight": 7},
+        {"label": "EBITDA Margin", "score": linear_score(ebitda_margin_pct, 5, 45), "weight": 7},
+        {"label": "Net Margin", "score": linear_score(net_margin_pct, 0, 30), "weight": 5},
+    ]
+    growth_components = [
+        {"label": "Revenue Growth", "score": linear_score(revenue_growth_pct, 0, 25), "weight": 10},
+        {"label": "Earnings Growth", "score": linear_score(earnings_growth_pct, 0, 30), "weight": 10},
+    ]
+    strength_components = [
+        {"label": "Debt / EBITDA", "score": linear_score(debt_to_ebitda, 4.0, 0.5, higher_is_better=False), "weight": 12},
+        {"label": "Current Ratio", "score": linear_score(current_ratio, 0.75, 2.0), "weight": 8},
+    ]
+    efficiency_components = [
+        {"label": "ROE", "score": linear_score(roe_pct, 5, 35), "weight": 9},
+        {"label": "ROA", "score": linear_score(roa_pct, 2, 18), "weight": 6},
+    ]
+    cash_components = [
+        {"label": "FCF Margin", "score": linear_score(fcf_margin_pct, 0, 30), "weight": 10},
+    ]
+    stability_components = [
+        {"label": "Positive Revenue Growth", "score": 100 if revenue_growth_pct is not None and revenue_growth_pct > 0 else (0 if revenue_growth_pct is not None else None), "weight": 5},
+        {"label": "Positive Earnings Growth", "score": 100 if earnings_growth_pct is not None and earnings_growth_pct > 0 else (0 if earnings_growth_pct is not None else None), "weight": 5},
+    ]
+
+    categories = {}
+    all_components = []
+    for name, category_components in [
+        ("Profitability", profitability_components),
+        ("Growth", growth_components),
+        ("Financial Strength", strength_components),
+        ("Capital Efficiency", efficiency_components),
+        ("Cash Generation", cash_components),
+        ("Stability Proxy", stability_components),
+    ]:
+        category_score, category_coverage = weighted_available_score(category_components)
+        categories[name] = {
+            "score": category_score,
+            "coverage": category_coverage,
+            "components": category_components,
+        }
+        all_components.extend(category_components)
+
+    overall, coverage = weighted_available_score(all_components)
+    return {
+        "score": overall,
+        "coverage": coverage,
+        "grade": score_grade(overall),
+        "categories": categories,
+    }
+
+
+def calculate_valuation_score(metrics):
+    trailing_pe = to_float(metrics.get("trailing_pe"))
+    forward_pe = to_float(metrics.get("forward_pe"))
+    peg = to_float(metrics.get("peg"))
+    ev_to_ebitda = to_float(metrics.get("ev_to_ebitda"))
+    price_to_sales = to_float(metrics.get("price_to_sales"))
+    price_to_book = to_float(metrics.get("price_to_book"))
+    price_to_fcf = to_float(metrics.get("price_to_fcf"))
+    ev_baseline = to_float(metrics.get("ev_baseline"))
+
+    if ev_to_ebitda is not None and ev_baseline not in (None, 0):
+        ev_relative = ev_to_ebitda / ev_baseline
+        ev_score = linear_score(ev_relative, 1.50, 0.60, higher_is_better=False)
+        ev_label = "EV/EBITDA vs Peer Baseline"
+    else:
+        ev_score = linear_score(ev_to_ebitda, 30, 8, higher_is_better=False)
+        ev_label = "EV/EBITDA"
+
+    components = [
+        {"label": "Trailing P/E", "score": linear_score(trailing_pe, 45, 12, higher_is_better=False), "weight": 15},
+        {"label": "Forward P/E", "score": linear_score(forward_pe, 40, 12, higher_is_better=False), "weight": 25},
+        {"label": "PEG", "score": linear_score(peg, 3.0, 0.7, higher_is_better=False), "weight": 20},
+        {"label": ev_label, "score": ev_score, "weight": 25},
+        {"label": "Price / Sales", "score": linear_score(price_to_sales, 12, 1.5, higher_is_better=False), "weight": 5},
+        {"label": "Price / Book", "score": linear_score(price_to_book, 15, 1.5, higher_is_better=False), "weight": 3},
+        {"label": "Price / FCF", "score": linear_score(price_to_fcf, 50, 12, higher_is_better=False), "weight": 7},
+    ]
+
+    score, coverage = weighted_available_score(components)
+    return {
+        "score": score,
+        "coverage": coverage,
+        "grade": score_grade(score),
+        "components": components,
+    }
+
+
+def calculate_investment_score(quality_score, valuation_score, timing_raw):
+    timing_100 = timing_score_to_100(timing_raw)
+    components = [
+        {"label": "Business Quality", "score": quality_score, "weight": 50},
+        {"label": "Valuation", "score": valuation_score, "weight": 35},
+        {"label": "Technical Timing", "score": timing_100, "weight": 15},
+    ]
+    score, coverage = weighted_available_score(components)
+    return {
+        "score": score,
+        "coverage": coverage,
+        "grade": score_grade(score),
+        "timing_100": timing_100,
+        "components": components,
+    }
+
+
+def score_breakdown_dataframe(score_object, category_mode=False):
+    rows = []
+    if category_mode:
+        for name, payload in score_object.get("categories", {}).items():
+            rows.append({
+                "Category": name,
+                "Score": payload.get("score"),
+                "Coverage": payload.get("coverage"),
+            })
+    else:
+        for item in score_object.get("components", []):
+            rows.append({
+                "Metric": item.get("label"),
+                "Score": item.get("score"),
+                "Weight": item.get("weight"),
+            })
+    return pd.DataFrame(rows)
+
+
+def render_score_cards(result):
+    score_items = [
+        ("Business Quality", result.get("quality_score"), result.get("quality_grade"), result.get("quality_coverage")),
+        ("Valuation", result.get("valuation_score"), result.get("valuation_grade"), result.get("valuation_coverage")),
+        ("Technical Timing", result.get("timing_score_100"), result.get("timing_label"), 100),
+        ("Investment Score", result.get("investment_score"), result.get("investment_grade"), result.get("investment_coverage")),
+    ]
+    cards = []
+    for label, score, grade, coverage in score_items:
+        score_text = "N/A" if score is None else f"{score:.0f}"
+        coverage_text = "" if coverage is None else f"Data coverage: {coverage:.0f}%"
+        cards.append(
+            "<div class='score-card'>"
+            f"<div class='score-label'>{html.escape(str(label))}</div>"
+            f"<div class='score-value'>{html.escape(score_text)}</div>"
+            f"<div class='score-grade'>{html.escape(str(grade))}</div>"
+            f"<div class='score-coverage'>{html.escape(coverage_text)}</div>"
+            "</div>"
+        )
+    st.markdown(
+        f"<div class='score-grid'>{''.join(cards)}</div>",
+        unsafe_allow_html=True,
+    )
+
+
+@st.cache_data(ttl=600)
+def fetch_company_name_yahoo(ticker):
+    try:
+        tk = yf.Ticker(ticker)
+        info = tk.info
+        name = info.get("shortName") or info.get("longName") or ticker
+
+        suffixes = [
+            " Corporation", " Corp.", " Corp", " Inc.", " Inc",
+            " Ltd.", " Ltd", " Holdings", " Group", " PLC", " plc",
+            " Company", " Co.", " Co"
+        ]
+        for s in suffixes:
+            if name.endswith(s):
+                name = name[:-len(s)].strip()
+
+        return name
+    except Exception:
+        return ticker
+
+
+@st.cache_data(ttl=600)
+def fetch_earnings_date_yahoo(ticker):
+    try:
+        tk = yf.Ticker(ticker)
+
+        cal = tk.calendar
+        if cal is not None:
+            if isinstance(cal, pd.DataFrame) and not cal.empty:
+                for idx in cal.index:
+                    idx_str = str(idx).lower()
+                    if "earn" in idx_str:
+                        row = cal.loc[idx]
+                        if isinstance(row, pd.Series) and len(row) > 0:
+                            val = row.iloc[0]
+                            if pd.notna(val):
+                                return pd.to_datetime(val).strftime("%Y-%m-%d")
+            elif isinstance(cal, dict):
+                for k, v in cal.items():
+                    if "earn" in str(k).lower():
+                        if isinstance(v, (list, tuple)) and len(v) > 0 and pd.notna(v[0]):
+                            return pd.to_datetime(v[0]).strftime("%Y-%m-%d")
+                        if not isinstance(v, (list, tuple)) and pd.notna(v):
+                            return pd.to_datetime(v).strftime("%Y-%m-%d")
+
+        try:
+            ed = tk.earnings_dates
+            if ed is not None and not ed.empty:
+                next_dt = ed.index[0]
+                return pd.to_datetime(next_dt).strftime("%Y-%m-%d")
+        except Exception:
+            pass
+
+        return "N/A"
+    except Exception:
+        return "N/A"
 
 
 # =========================
@@ -374,23 +881,53 @@ def options_optimizer(latest_close, trend_state, setup_verdict, timing_label):
 # =========================
 # EV/EBITDA RELATIVE VIEW
 # =========================
-def ev_ebitda_relative_view(current_ev_ebitda):
+def ev_ebitda_relative_view(current_ev_ebitda, baseline, baseline_source="Selected baseline"):
+    """Compare the current multiple with a peer or manual benchmark."""
     current_ev_ebitda = to_float(current_ev_ebitda)
-    if current_ev_ebitda is None:
-        return {"status": "Unavailable", "comparison": "Historical EV/EBITDA comparison unavailable"}
+    baseline = to_float(baseline)
 
-    baseline = 22.0
-    premium_pct = ((current_ev_ebitda / baseline) - 1) * 100
+    if current_ev_ebitda is None or current_ev_ebitda <= 0:
+        return {
+            "status": "Unavailable",
+            "comparison": "Current EV/EBITDA is unavailable",
+            "baseline": baseline,
+            "baseline_source": baseline_source,
+            "difference_pct": None,
+        }
 
-    if premium_pct > 25:
-        status = "Premium vs baseline"
-    elif premium_pct < -15:
-        status = "Discount vs baseline"
-    else:
+    if baseline is None or baseline <= 0:
+        return {
+            "status": "Unavailable",
+            "comparison": "A reliable comparison baseline is unavailable",
+            "baseline": None,
+            "baseline_source": baseline_source,
+            "difference_pct": None,
+        }
+
+    difference_pct = ((current_ev_ebitda / baseline) - 1) * 100
+
+    if difference_pct <= -20:
+        status = "Large discount vs baseline"
+    elif difference_pct <= -10:
+        status = "Moderate discount vs baseline"
+    elif difference_pct < 10:
         status = "Near baseline"
+    elif difference_pct < 20:
+        status = "Moderate premium vs baseline"
+    else:
+        status = "Large premium vs baseline"
 
-    comparison = f"Current {current_ev_ebitda:.1f}x vs baseline {baseline:.1f}x ({premium_pct:+.1f}%)"
-    return {"status": status, "comparison": comparison}
+    comparison = (
+        f"Current {current_ev_ebitda:.1f}x vs {baseline_source.lower()} "
+        f"{baseline:.1f}x ({difference_pct:+.1f}%)"
+    )
+    return {
+        "status": status,
+        "comparison": comparison,
+        "baseline": baseline,
+        "baseline_source": baseline_source,
+        "difference_pct": difference_pct,
+    }
 
 
 # =========================
@@ -407,6 +944,197 @@ def classify_iv(iv):
     return "High IV"
 
 
+def options_setup_score(trend_state, timing_score, iv_percentile_approx, iv_regime, options_view):
+    score = 0
+
+    if trend_state == "Bullish Trend":
+        score += 3
+    elif trend_state == "Mixed / Transition":
+        score += 1
+    else:
+        score -= 2
+
+    timing_score = to_float(timing_score)
+    if timing_score is not None:
+        score += timing_score
+
+    iv_percentile_approx = to_float(iv_percentile_approx)
+    if iv_percentile_approx is not None:
+        if iv_percentile_approx >= 70:
+            score += 3
+        elif iv_percentile_approx <= 30:
+            score += 2
+        else:
+            score += 1
+
+    if iv_regime == "High IV":
+        score += 2
+    elif iv_regime == "Moderate IV":
+        score += 1
+
+    if isinstance(options_view, str):
+        ov = options_view.lower()
+        if "bull put spread preferred" in ov:
+            score += 2
+        elif "itm call leaps" in ov:
+            score += 2
+        elif "neutral" in ov or "wait" in ov:
+            score -= 1
+        elif "no aggressive bullish" in ov:
+            score -= 3
+
+    return score
+
+
+def options_setup_label(iv_percentile_approx, iv_regime, options_view, trend_state):
+    iv_percentile_approx = to_float(iv_percentile_approx)
+    ov = (options_view or "").lower()
+
+    if trend_state == "Bearish Trend":
+        return "Wait / Weak Setup"
+
+    if iv_percentile_approx is not None and iv_percentile_approx >= 70:
+        return "Best for Premium Selling"
+
+    if iv_percentile_approx is not None and iv_percentile_approx <= 30:
+        return "Best for LEAPS"
+
+    if "bull put spread preferred" in ov:
+        return "Best for Premium Selling"
+
+    if "itm call leaps" in ov:
+        return "Best for LEAPS"
+
+    return "Balanced / Mixed"
+
+
+def _normalize_iv_to_percent(value):
+    v = to_float(value)
+    if v is None or v <= 0:
+        return None
+    return v * 100.0 if v <= 3.0 else v
+
+
+def _clean_iv_history(iv_history):
+    cleaned = []
+    for x in iv_history:
+        v = _normalize_iv_to_percent(x)
+        if v is None:
+            continue
+        cleaned.append(v)
+    return cleaned
+
+
+def compute_iv_percentile_from_history(current_iv, iv_history):
+    current_iv_pct = _normalize_iv_to_percent(current_iv)
+    history_pct = _clean_iv_history(iv_history)
+
+    if current_iv_pct is None or len(history_pct) < 3:
+        return None
+
+    days_below = sum(1 for historical_iv in history_pct if historical_iv < current_iv_pct)
+    return (days_below / len(history_pct)) * 100.0
+
+
+def compute_iv_rank_from_history(current_iv, iv_history):
+    current_iv_pct = _normalize_iv_to_percent(current_iv)
+    history_pct = _clean_iv_history(iv_history)
+
+    if current_iv_pct is None or len(history_pct) < 3:
+        return None
+
+    iv_low = min(history_pct)
+    iv_high = max(history_pct)
+
+    if iv_high == iv_low:
+        return None
+
+    return ((current_iv_pct - iv_low) / (iv_high - iv_low)) * 100.0
+
+
+def iv_decision_engine(trend, iv_percentile, near_earnings=False):
+    trend = (trend or "neutral").strip().lower()
+
+    if iv_percentile is None:
+        return {
+            "decision": "Wait",
+            "typical_strategy": "No strong IV edge",
+            "explanation": "IV percentile unavailable."
+        }
+
+    if near_earnings:
+        if iv_percentile >= 70:
+            return {
+                "decision": "Wait / Event Risk",
+                "typical_strategy": "Defined-risk premium selling only",
+                "explanation": "Earnings is near and IV is elevated."
+            }
+        return {
+            "decision": "Wait / Event Risk",
+            "typical_strategy": "Small defined-risk only",
+            "explanation": "Earnings is near."
+        }
+
+    if trend == "bullish trend":
+        if iv_percentile <= 25:
+            return {
+                "decision": "Good Buy",
+                "typical_strategy": "Shares or ITM LEAPS",
+                "explanation": "Bullish trend with relatively cheap options."
+            }
+        elif iv_percentile >= 75:
+            return {
+                "decision": "Good Buy for Premium Selling",
+                "typical_strategy": "Bull put spread",
+                "explanation": "Bullish trend with relatively rich option premium."
+            }
+        else:
+            return {
+                "decision": "Watch / Selective Buy",
+                "typical_strategy": "Defined-risk bullish structure",
+                "explanation": "Bullish trend, but IV is mid-range."
+            }
+
+    if trend == "bearish trend":
+        if iv_percentile >= 75:
+            return {
+                "decision": "Good Sell / Bearish Premium Setup",
+                "typical_strategy": "Bear call spread",
+                "explanation": "Bearish trend with rich premium."
+            }
+        elif iv_percentile <= 25:
+            return {
+                "decision": "Possible Bearish Buy",
+                "typical_strategy": "Long puts or put debit spread",
+                "explanation": "Bearish trend with relatively cheap options."
+            }
+        else:
+            return {
+                "decision": "Wait / Bearish Bias",
+                "typical_strategy": "Small bearish defined-risk structure",
+                "explanation": "Bearish trend, but IV is mid-range."
+            }
+
+    if iv_percentile <= 20:
+        return {
+            "decision": "Possible Buy",
+            "typical_strategy": "Long premium if thesis is strong",
+            "explanation": "Trend is mixed, but options are relatively cheap."
+        }
+    elif iv_percentile >= 80:
+        return {
+            "decision": "Possible Sell / Premium Opportunity",
+            "typical_strategy": "Credit spreads or iron condor",
+            "explanation": "Trend is mixed, but options are relatively expensive."
+        }
+
+    return {
+        "decision": "Wait",
+        "typical_strategy": "No strong edge",
+        "explanation": "Trend and IV context are neutral."
+    }
+
+
 @st.cache_data(ttl=900)
 def fetch_iv_data_yahoo(ticker):
     try:
@@ -415,72 +1143,100 @@ def fetch_iv_data_yahoo(ticker):
 
         if not expirations:
             return {
-                "atm_iv": None,
+                "implied_volatility": None,
                 "iv_percentile_approx": None,
                 "iv_regime": "N/A",
-                "iv_note": "No option expirations available from Yahoo"
+                "iv_note": "No option expirations available from Yahoo",
+                "iv_history_proxy": []
             }
 
         hist = tk.history(period="5d")
         if hist.empty:
             return {
-                "atm_iv": None,
+                "implied_volatility": None,
                 "iv_percentile_approx": None,
                 "iv_regime": "N/A",
-                "iv_note": "No recent price available for IV calculation"
+                "iv_note": "No recent price available for IV calculation",
+                "iv_history_proxy": []
             }
 
         spot = float(hist["Close"].iloc[-1])
 
+        def _representative_iv_from_chain(chain_df, spot_price):
+            if chain_df is None or chain_df.empty:
+                return None
+
+            if "strike" not in chain_df.columns or "impliedVolatility" not in chain_df.columns:
+                return None
+
+            df = chain_df.copy()
+            df = df[
+                df["strike"].notna() &
+                df["impliedVolatility"].notna()
+            ].copy()
+
+            df = df[
+                (df["impliedVolatility"] >= 0.05) &
+                (df["impliedVolatility"] <= 3.00)
+            ].copy()
+
+            if df.empty:
+                return None
+
+            df["moneyness_pct"] = (df["strike"] - spot_price).abs() / spot_price
+
+            near = df[df["moneyness_pct"] <= 0.10].copy()
+
+            if len(near) < 4:
+                near = df.sort_values("moneyness_pct").head(10).copy()
+
+            if near.empty:
+                return None
+
+            return float(near["impliedVolatility"].median())
+
         nearest_exp = expirations[0]
         chain = tk.option_chain(nearest_exp)
-        calls = chain.calls.copy()
 
-        if calls.empty or "strike" not in calls.columns or "impliedVolatility" not in calls.columns:
-            return {
-                "atm_iv": None,
-                "iv_percentile_approx": None,
-                "iv_regime": "N/A",
-                "iv_note": "No usable call IV data from Yahoo"
-            }
+        call_iv = _representative_iv_from_chain(chain.calls, spot)
+        put_iv = _representative_iv_from_chain(chain.puts, spot)
 
-        calls["distance"] = (calls["strike"] - spot).abs()
-        atm_row = calls.sort_values("distance").iloc[0]
-        atm_iv = to_float(atm_row.get("impliedVolatility"))
+        iv_candidates = [x for x in [call_iv, put_iv] if x is not None]
+        implied_volatility = float(np.median(iv_candidates)) if iv_candidates else None
 
-        atm_ivs = []
+        iv_history_proxy = []
         for exp in expirations[:8]:
             try:
                 ch = tk.option_chain(exp)
-                c = ch.calls.copy()
-                if c.empty:
-                    continue
-                c["distance"] = (c["strike"] - spot).abs()
-                row = c.sort_values("distance").iloc[0]
-                iv_val = to_float(row.get("impliedVolatility"))
-                if iv_val is not None and iv_val > 0:
-                    atm_ivs.append(iv_val)
+                c_iv = _representative_iv_from_chain(ch.calls, spot)
+                p_iv = _representative_iv_from_chain(ch.puts, spot)
+
+                vals = [x for x in [c_iv, p_iv] if x is not None]
+                if vals:
+                    iv_history_proxy.append(float(np.median(vals)))
             except Exception:
                 continue
 
         iv_percentile_approx = None
-        if atm_iv is not None and len(atm_ivs) >= 3:
-            arr = np.array(sorted(atm_ivs))
-            iv_percentile_approx = float((arr <= atm_iv).sum() / len(arr) * 100)
+        if implied_volatility is not None and len(iv_history_proxy) >= 3:
+            arr = np.array(sorted(iv_history_proxy))
+            iv_percentile_approx = float((arr < implied_volatility).sum() / len(arr) * 100)
 
         return {
-            "atm_iv": atm_iv,
+            "implied_volatility": implied_volatility,
             "iv_percentile_approx": iv_percentile_approx,
-            "iv_regime": classify_iv(atm_iv),
-            "iv_note": "IV percentile is approximate (based on available expirations, not 1-year historical IV)"
+            "iv_regime": classify_iv(implied_volatility),
+            "iv_note": "Implied volatility is estimated from near-the-money calls and puts; IV percentile is experimental and based on available expirations, not 1-year historical IV",
+            "iv_history_proxy": iv_history_proxy
         }
 
     except Exception:
         return {
-            "atm_iv": None,
+            "implied_volatility": None,
             "iv_percentile_approx": None,
             "iv_regime": "N/A",
-            "iv_note": "Yahoo options data unavailable"
+            "iv_note": "Yahoo options data unavailable",
+            "iv_history_proxy": []
         }
 
 
@@ -510,18 +1266,47 @@ def fetch_price_data_yahoo(ticker, period):
 
 @st.cache_data(ttl=600)
 def fetch_yahoo_backup_fundamentals(ticker):
+    """Primary valuation source.
+
+    Yahoo's ratio fields are kept together so P/E, PEG, and EV/EBITDA
+    are not assembled from incompatible periods or providers.
+    """
     try:
-        info = yf.Ticker(ticker).info
-        fast_info = dict(yf.Ticker(ticker).fast_info)
+        tk = yf.Ticker(ticker)
+        info = tk.info or {}
+        try:
+            fast_info = dict(tk.fast_info)
+        except Exception:
+            fast_info = {}
 
         return {
-            "source": "Yahoo Backup",
+            "source": "Yahoo Primary",
             "trailingPE": info.get("trailingPE"),
             "forwardPE": info.get("forwardPE"),
+            "trailingEPS": info.get("trailingEps"),
+            "forwardEPS": info.get("forwardEps"),
+            "peg": info.get("pegRatio"),
             "earningsGrowth": info.get("earningsGrowth"),
+            "earningsQuarterlyGrowth": info.get("earningsQuarterlyGrowth"),
             "revenueGrowth": info.get("revenueGrowth"),
             "ebitdaMargins": info.get("ebitdaMargins"),
+            "profitMargins": info.get("profitMargins"),
+            "grossMargins": info.get("grossMargins"),
+            "operatingMargins": info.get("operatingMargins"),
+            "returnOnEquity": info.get("returnOnEquity"),
+            "returnOnAssets": info.get("returnOnAssets"),
+            "currentRatio": info.get("currentRatio"),
+            "freeCashflow": info.get("freeCashflow"),
+            "operatingCashflow": info.get("operatingCashflow"),
+            "priceToSales": info.get("priceToSalesTrailing12Months"),
+            "priceToBook": info.get("priceToBook"),
             "marketCap": first_non_none(info.get("marketCap"), fast_info.get("marketCap")),
+            "enterpriseValue": info.get("enterpriseValue"),
+            "totalDebt": info.get("totalDebt"),
+            "cash": first_non_none(info.get("totalCash"), info.get("cash")),
+            "revenue": info.get("totalRevenue"),
+            "ebitda": info.get("ebitda"),
+            "netIncome": info.get("netIncomeToCommon"),
             "beta": info.get("beta"),
             "fiftyTwoWeekHigh": info.get("fiftyTwoWeekHigh"),
             "fiftyTwoWeekLow": info.get("fiftyTwoWeekLow"),
@@ -529,6 +1314,85 @@ def fetch_yahoo_backup_fundamentals(ticker):
         }
     except Exception:
         return {}
+
+
+# =========================
+# PEER EV/EBITDA BENCHMARK
+# =========================
+@st.cache_data(ttl=3600)
+def fetch_company_peers_finnhub(ticker, api_key, max_peers=10):
+    """Return same-industry peer symbols from Finnhub."""
+    if not api_key:
+        return []
+    try:
+        response = requests.get(
+            "https://finnhub.io/api/v1/stock/peers",
+            headers={"X-Finnhub-Token": api_key},
+            params={"symbol": ticker.upper(), "grouping": "industry"},
+            timeout=20,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        if not isinstance(payload, list):
+            return []
+        cleaned = []
+        for symbol in payload:
+            symbol = str(symbol).upper().strip()
+            if symbol and symbol != ticker.upper() and symbol not in cleaned:
+                cleaned.append(symbol)
+        return cleaned[:max_peers]
+    except Exception:
+        return []
+
+
+@st.cache_data(ttl=3600)
+def fetch_peer_ev_ebitda_yahoo(ticker):
+    try:
+        info = yf.Ticker(ticker).info or {}
+        value = to_float(info.get("enterpriseToEbitda"))
+        if value is None or value <= 0 or value > 100:
+            return None
+        return value
+    except Exception:
+        return None
+
+
+@st.cache_data(ttl=3600)
+def calculate_peer_ev_ebitda_median(ticker, finnhub_api_key, max_peers=10, minimum_valid_peers=3):
+    peers = fetch_company_peers_finnhub(ticker, finnhub_api_key, max_peers)
+    rows = []
+    for peer in peers:
+        value = fetch_peer_ev_ebitda_yahoo(peer)
+        if value is not None:
+            rows.append({"Ticker": peer, "EV / EBITDA": value})
+
+    peer_table = pd.DataFrame(rows)
+    if len(peer_table) < minimum_valid_peers:
+        return {
+            "median": None,
+            "peer_count": len(peer_table),
+            "peer_table": peer_table,
+            "source": "Insufficient peer data",
+        }
+
+    q1 = peer_table["EV / EBITDA"].quantile(0.25)
+    q3 = peer_table["EV / EBITDA"].quantile(0.75)
+    iqr = q3 - q1
+    lower = max(0.0, q1 - 1.5 * iqr)
+    upper = q3 + 1.5 * iqr
+    filtered = peer_table[
+        (peer_table["EV / EBITDA"] >= lower)
+        & (peer_table["EV / EBITDA"] <= upper)
+    ].copy()
+    if len(filtered) < minimum_valid_peers:
+        filtered = peer_table.copy()
+
+    return {
+        "median": float(filtered["EV / EBITDA"].median()),
+        "peer_count": len(filtered),
+        "peer_table": filtered.sort_values("EV / EBITDA").reset_index(drop=True),
+        "source": "Industry peer median",
+    }
 
 
 @st.cache_data(ttl=600)
@@ -607,79 +1471,134 @@ def fetch_finnhub_fundamentals(ticker, api_key):
         return {}
 
 
-def merge_fundamentals(fmp_data, finnhub_data, yahoo_backup):
-    sources = []
-    if fmp_data:
-        sources.append("FMP")
-    if finnhub_data:
-        sources.append("Finnhub")
-    if yahoo_backup:
-        sources.append("Yahoo Backup")
+def _metric(value, source):
+    return {"value": to_float(value), "source": source}
 
-    return {
-        "source_used": " + ".join(sources) if sources else "None",
-        "trailingPE": first_non_none(
-            fmp_data.get("trailingPE") if fmp_data else None,
-            finnhub_data.get("trailingPE") if finnhub_data else None,
-            yahoo_backup.get("trailingPE") if yahoo_backup else None
-        ),
-        "forwardPE": first_non_none(
-            fmp_data.get("forwardPE") if fmp_data else None,
-            yahoo_backup.get("forwardPE") if yahoo_backup else None
-        ),
-        "earningsGrowth": first_non_none(
-            fmp_data.get("earningsGrowth") if fmp_data else None,
-            yahoo_backup.get("earningsGrowth") if yahoo_backup else None
-        ),
-        "revenueGrowth": first_non_none(
-            fmp_data.get("revenueGrowth") if fmp_data else None,
-            finnhub_data.get("revenueGrowth") if finnhub_data else None,
-            yahoo_backup.get("revenueGrowth") if yahoo_backup else None
-        ),
-        "ebitdaMargins": first_non_none(
-            fmp_data.get("ebitdaMargins") if fmp_data else None,
-            finnhub_data.get("ebitdaMargins") if finnhub_data else None,
-            yahoo_backup.get("ebitdaMargins") if yahoo_backup else None
-        ),
-        "marketCap": first_non_none(
-            fmp_data.get("marketCap") if fmp_data else None,
-            finnhub_data.get("marketCap") if finnhub_data else None,
-            yahoo_backup.get("marketCap") if yahoo_backup else None
-        ),
-        "beta": first_non_none(
-            fmp_data.get("beta") if fmp_data else None,
-            finnhub_data.get("beta") if finnhub_data else None,
-            yahoo_backup.get("beta") if yahoo_backup else None
-        ),
-        "fiftyTwoWeekHigh": first_non_none(
-            fmp_data.get("fiftyTwoWeekHigh") if fmp_data else None,
-            finnhub_data.get("fiftyTwoWeekHigh") if finnhub_data else None,
-            yahoo_backup.get("fiftyTwoWeekHigh") if yahoo_backup else None
-        ),
-        "fiftyTwoWeekLow": first_non_none(
-            fmp_data.get("fiftyTwoWeekLow") if fmp_data else None,
-            finnhub_data.get("fiftyTwoWeekLow") if finnhub_data else None,
-            yahoo_backup.get("fiftyTwoWeekLow") if yahoo_backup else None
-        ),
-        "enterpriseToEbitda": first_non_none(
-            fmp_data.get("enterpriseToEbitda") if fmp_data else None,
-            finnhub_data.get("enterpriseToEbitda") if finnhub_data else None,
-            yahoo_backup.get("enterpriseToEbitda") if yahoo_backup else None
-        ),
-        "peg": fmp_data.get("peg") if fmp_data else None
+
+def merge_fundamentals(fmp_data, finnhub_data, yahoo_data):
+    """Merge providers while keeping valuation ratios internally coherent.
+
+    Yahoo is the preferred source for valuation ratios because the related
+    ratio fields are generated under one methodology. FMP and Finnhub act as
+    fallbacks and cross-checks, not as ingredients mixed into the same ratio.
+    """
+    y = yahoo_data or {}
+    f = fmp_data or {}
+    h = finnhub_data or {}
+
+    metric_sources = {}
+
+    def choose(name, candidates):
+        for value, source in candidates:
+            value = to_float(value)
+            if value is not None and math.isfinite(value):
+                metric_sources[name] = source
+                return value
+        metric_sources[name] = "Unavailable"
+        return None
+
+    trailing_pe = choose("Trailing P/E", [
+        (y.get("trailingPE"), "Yahoo"),
+        (f.get("trailingPE"), "FMP"),
+        (h.get("trailingPE"), "Finnhub"),
+    ])
+    forward_pe = choose("Forward P/E", [
+        (y.get("forwardPE"), "Yahoo"),
+        (f.get("forwardPE"), "FMP"),
+    ])
+    ev_to_ebitda = choose("EV / EBITDA", [
+        (y.get("enterpriseToEbitda"), "Yahoo"),
+        (f.get("enterpriseToEbitda"), "FMP"),
+        (h.get("enterpriseToEbitda"), "Finnhub"),
+    ])
+    peg = choose("PEG", [
+        (y.get("peg"), "Yahoo"),
+        (f.get("peg"), "FMP"),
+    ])
+
+    result = {
+        "source_used": "Yahoo primary; FMP/Finnhub fallback",
+        "metric_sources": metric_sources,
+        "trailingPE": trailing_pe,
+        "forwardPE": forward_pe,
+        "trailingEPS": choose("Trailing EPS", [(y.get("trailingEPS"), "Yahoo")]),
+        "forwardEPS": choose("Forward EPS", [(y.get("forwardEPS"), "Yahoo")]),
+        "earningsGrowth": choose("Earnings Growth", [
+            (y.get("earningsGrowth"), "Yahoo"),
+            (y.get("earningsQuarterlyGrowth"), "Yahoo"),
+            (f.get("earningsGrowth"), "FMP"),
+        ]),
+        "revenueGrowth": choose("Revenue Growth", [
+            (y.get("revenueGrowth"), "Yahoo"),
+            (f.get("revenueGrowth"), "FMP"),
+            (h.get("revenueGrowth"), "Finnhub"),
+        ]),
+        "ebitdaMargins": choose("EBITDA Margin", [
+            (y.get("ebitdaMargins"), "Yahoo"),
+            (f.get("ebitdaMargins"), "FMP"),
+            (h.get("ebitdaMargins"), "Finnhub"),
+        ]),
+        "marketCap": choose("Market Cap", [
+            (y.get("marketCap"), "Yahoo"),
+            (f.get("marketCap"), "FMP"),
+            (h.get("marketCap"), "Finnhub"),
+        ]),
+        "enterpriseValue": choose("Enterprise Value", [(y.get("enterpriseValue"), "Yahoo")]),
+        "totalDebt": choose("Total Debt", [(y.get("totalDebt"), "Yahoo")]),
+        "cash": choose("Cash", [(y.get("cash"), "Yahoo")]),
+        "revenue": choose("Revenue", [(y.get("revenue"), "Yahoo")]),
+        "ebitda": choose("EBITDA", [(y.get("ebitda"), "Yahoo")]),
+        "netIncome": choose("Net Income", [(y.get("netIncome"), "Yahoo")]),
+        "grossMargins": choose("Gross Margin", [(y.get("grossMargins"), "Yahoo")]),
+        "operatingMargins": choose("Operating Margin", [(y.get("operatingMargins"), "Yahoo")]),
+        "profitMargins": choose("Net Margin", [(y.get("profitMargins"), "Yahoo")]),
+        "returnOnEquity": choose("ROE", [(y.get("returnOnEquity"), "Yahoo")]),
+        "returnOnAssets": choose("ROA", [(y.get("returnOnAssets"), "Yahoo")]),
+        "currentRatio": choose("Current Ratio", [(y.get("currentRatio"), "Yahoo")]),
+        "freeCashflow": choose("Free Cash Flow", [(y.get("freeCashflow"), "Yahoo")]),
+        "operatingCashflow": choose("Operating Cash Flow", [(y.get("operatingCashflow"), "Yahoo")]),
+        "priceToSales": choose("Price / Sales", [(y.get("priceToSales"), "Yahoo")]),
+        "priceToBook": choose("Price / Book", [(y.get("priceToBook"), "Yahoo")]),
+        "beta": choose("Beta", [
+            (y.get("beta"), "Yahoo"),
+            (f.get("beta"), "FMP"),
+            (h.get("beta"), "Finnhub"),
+        ]),
+        "fiftyTwoWeekHigh": choose("52 Week High", [
+            (y.get("fiftyTwoWeekHigh"), "Yahoo"),
+            (h.get("fiftyTwoWeekHigh"), "Finnhub"),
+        ]),
+        "fiftyTwoWeekLow": choose("52 Week Low", [
+            (y.get("fiftyTwoWeekLow"), "Yahoo"),
+            (h.get("fiftyTwoWeekLow"), "Finnhub"),
+        ]),
+        "enterpriseToEbitda": ev_to_ebitda,
+        "peg": peg,
     }
+
+    return result
 
 
 # =========================
 # MAIN LOADER
 # =========================
 @st.cache_data(ttl=600)
-def load_analysis(ticker, period, fmp_api_key, finnhub_api_key):
+def load_analysis(
+    ticker,
+    period,
+    fmp_api_key,
+    finnhub_api_key,
+    ev_baseline_method="Industry peer median",
+    manual_ev_baseline=22.0,
+    enable_peer_baseline=True,
+):
     stock_data = fetch_price_data_yahoo(ticker, period)
     if stock_data.empty:
         return None
 
     stock_data = compute_indicators(stock_data)
+    company_name = fetch_company_name_yahoo(ticker)
+    earnings_date = fetch_earnings_date_yahoo(ticker)
 
     fmp_data = fetch_fmp_fundamentals(ticker, fmp_api_key)
     finnhub_data = fetch_finnhub_fundamentals(ticker, finnhub_api_key)
@@ -698,16 +1617,67 @@ def load_analysis(ticker, period, fmp_api_key, finnhub_api_key):
     fifty_two_low = data.get("fiftyTwoWeekLow")
     ev_to_ebitda = data.get("enterpriseToEbitda")
     peg = data.get("peg")
+    trailing_eps = data.get("trailingEPS")
+    forward_eps = data.get("forwardEPS")
+    enterprise_value = data.get("enterpriseValue")
+    total_debt = data.get("totalDebt")
+    cash = data.get("cash")
+    revenue = data.get("revenue")
+    ebitda = data.get("ebitda")
+    net_income = data.get("netIncome")
+    gross_margin = data.get("grossMargins")
+    operating_margin = data.get("operatingMargins")
+    net_margin = data.get("profitMargins")
+    roe = data.get("returnOnEquity")
+    roa = data.get("returnOnAssets")
+    current_ratio = data.get("currentRatio")
+    free_cash_flow = data.get("freeCashflow")
+    operating_cash_flow = data.get("operatingCashflow")
+    price_to_sales = data.get("priceToSales")
+    price_to_book = data.get("priceToBook")
 
-    # if peg is None and to_float(forward_pe) is not in [None] and to_float(earnings_growth) not in [None, 0]:
-
+    debt_to_ebitda = (
+        total_debt / ebitda
+        if total_debt is not None and ebitda not in (None, 0)
+        else None
+    )
+    fcf_margin = (
+        free_cash_flow / revenue
+        if free_cash_flow is not None and revenue not in (None, 0)
+        else None
+    )
+    price_to_fcf = (
+        market_cap / free_cash_flow
+        if market_cap is not None and free_cash_flow not in (None, 0)
+        and free_cash_flow > 0
+        else None
+    )
 
     forward_pe_val = to_float(forward_pe)
     earnings_growth_val = to_float(earnings_growth)
 
-    if peg is None and forward_pe_val not in [None] and earnings_growth_val not in [None, 0]:
-        peg = float(forward_pe_val) / (float(earnings_growth_val) * 100)
-     
+    data_notes = []
+
+    # Keep Yahoo's forward P/E as the primary value. Check its implied EPS
+    # against Yahoo forward EPS when both are available.
+    latest_price_for_check = float(stock_data["Close"].iloc[-1])
+    implied_forward_eps = (
+        latest_price_for_check / forward_pe_val
+        if forward_pe_val not in [None, 0] else None
+    )
+    if forward_eps is not None and implied_forward_eps is not None:
+        gap = abs(implied_forward_eps - forward_eps) / max(abs(forward_eps), 1e-9)
+        if gap > 0.25:
+            data_notes.append(
+                "Forward P/E and forward EPS differ by more than 25%; "
+                "the displayed forward P/E remains the provider ratio."
+            )
+
+    if peg is None and forward_pe_val is not None and earnings_growth_val not in [None, 0]:
+        growth_pct = normalize_percent_like(earnings_growth_val)
+        if growth_pct is not None and 0 < growth_pct <= 100:
+            peg = forward_pe_val / growth_pct
+
     rg_pts = normalize_percent_like(revenue_growth)
     em_pts = normalize_percent_like(ebitda_margin)
     rule_of_40 = None if rg_pts is None or em_pts is None else rg_pts + em_pts
@@ -733,18 +1703,194 @@ def load_analysis(ticker, period, fmp_api_key, finnhub_api_key):
 
     zones = entry_zones(stock_data)
     opt = options_optimizer(latest_close, trend_state, setup_verdict, timing_label)
-    ev_rel = ev_ebitda_relative_view(ev_to_ebitda)
+    peer_analysis = {
+        "median": None,
+        "peer_count": 0,
+        "peer_table": pd.DataFrame(),
+        "source": "Not requested",
+    }
+
+    if ev_baseline_method == "Industry peer median" and enable_peer_baseline:
+        peer_analysis = calculate_peer_ev_ebitda_median(
+            ticker=ticker,
+            finnhub_api_key=finnhub_api_key,
+            max_peers=10,
+            minimum_valid_peers=3,
+        )
+        if peer_analysis["median"] is not None:
+            selected_ev_baseline = peer_analysis["median"]
+            ev_baseline_source = f"Industry peer median ({peer_analysis['peer_count']} peers)"
+        else:
+            selected_ev_baseline = manual_ev_baseline
+            ev_baseline_source = "Manual fallback — insufficient peer data"
+    else:
+        selected_ev_baseline = manual_ev_baseline
+        ev_baseline_source = (
+            "Manual baseline"
+            if enable_peer_baseline
+            else "Manual baseline used by scanner to limit API calls"
+        )
+
+    ev_rel = ev_ebitda_relative_view(
+        current_ev_ebitda=ev_to_ebitda,
+        baseline=selected_ev_baseline,
+        baseline_source=ev_baseline_source,
+    )
+
+    quality = calculate_quality_score({
+        "revenue_growth": revenue_growth,
+        "earnings_growth": earnings_growth,
+        "gross_margin": gross_margin,
+        "operating_margin": operating_margin,
+        "ebitda_margin": ebitda_margin,
+        "net_margin": net_margin,
+        "roe": roe,
+        "roa": roa,
+        "fcf_margin": fcf_margin,
+        "debt_to_ebitda": debt_to_ebitda,
+        "current_ratio": current_ratio,
+    })
+
+    valuation_score_object = calculate_valuation_score({
+        "trailing_pe": trailing_pe,
+        "forward_pe": forward_pe,
+        "peg": peg,
+        "ev_to_ebitda": ev_to_ebitda,
+        "price_to_sales": price_to_sales,
+        "price_to_book": price_to_book,
+        "price_to_fcf": price_to_fcf,
+        "ev_baseline": selected_ev_baseline,
+    })
+
+    investment = calculate_investment_score(
+        quality_score=quality.get("score"),
+        valuation_score=valuation_score_object.get("score"),
+        timing_raw=timing_score,
+    )
+
+    quality_breakdown = score_breakdown_dataframe(quality, category_mode=True)
+    quality_metric_breakdown_rows = []
+    for category_name, payload in quality.get("categories", {}).items():
+        for item in payload.get("components", []):
+            quality_metric_breakdown_rows.append({
+                "Category": category_name,
+                "Metric": item.get("label"),
+                "Score": item.get("score"),
+                "Weight": item.get("weight"),
+            })
+    quality_metric_breakdown = pd.DataFrame(quality_metric_breakdown_rows)
+    valuation_breakdown = score_breakdown_dataframe(
+        valuation_score_object,
+        category_mode=False
+    )
+
     iv_data = fetch_iv_data_yahoo(ticker)
+
+    iv_history_proxy = iv_data.get("iv_history_proxy", [])
+    iv_rank = compute_iv_rank_from_history(iv_data.get("implied_volatility"), iv_history_proxy)
+    iv_percentile_engine = compute_iv_percentile_from_history(iv_data.get("implied_volatility"), iv_history_proxy)
+
+    near_earnings = False
+    try:
+        if earnings_date != "N/A":
+            ed = pd.to_datetime(earnings_date).date()
+            today = pd.Timestamp.today().date()
+            days_to_earnings = (ed - today).days
+            near_earnings = 0 <= days_to_earnings <= 14
+    except Exception:
+        near_earnings = False
+
+    iv_decision = iv_decision_engine(
+        trend=trend_state,
+        iv_percentile=iv_percentile_engine,
+        near_earnings=near_earnings
+    )
+
+    audit_rows = []
+    for metric_name, metric_value in [
+        ("Last Close", latest_close),
+        ("Trailing P/E", trailing_pe),
+        ("Forward P/E", forward_pe),
+        ("Trailing EPS", trailing_eps),
+        ("Forward EPS", forward_eps),
+        ("EV / EBITDA", ev_to_ebitda),
+        ("Enterprise Value", enterprise_value),
+        ("Market Cap", market_cap),
+        ("Total Debt", total_debt),
+        ("Cash", cash),
+        ("Revenue", revenue),
+        ("EBITDA", ebitda),
+        ("Net Income", net_income),
+        ("Revenue Growth", revenue_growth),
+        ("EBITDA Margin", ebitda_margin),
+        ("PEG", peg),
+        ("Rule of 40", rule_of_40),
+        ("Gross Margin", gross_margin),
+        ("Operating Margin", operating_margin),
+        ("Net Margin", net_margin),
+        ("ROE", roe),
+        ("ROA", roa),
+        ("Current Ratio", current_ratio),
+        ("Free Cash Flow", free_cash_flow),
+        ("Operating Cash Flow", operating_cash_flow),
+        ("FCF Margin", fcf_margin),
+        ("Debt / EBITDA", debt_to_ebitda),
+        ("Price / Sales", price_to_sales),
+        ("Price / Book", price_to_book),
+        ("Price / FCF", price_to_fcf),
+        ("Business Quality Score", quality.get("score")),
+        ("Valuation Score", valuation_score_object.get("score")),
+        ("Investment Score", investment.get("score")),
+    ]:
+        audit_rows.append({
+            "Field": metric_name,
+            "Raw Value": metric_value,
+            "Source": data.get("metric_sources", {}).get(metric_name, "Calculated"),
+        })
+
+    raw_debug_table = pd.DataFrame(audit_rows)
+
+    # Reconciliation checks shown to the user instead of silently mixing values.
+    if enterprise_value is not None and ebitda not in [None, 0]:
+        calculated_ev_ebitda = enterprise_value / ebitda
+        if ev_to_ebitda is not None:
+            diff = abs(calculated_ev_ebitda - ev_to_ebitda) / max(abs(ev_to_ebitda), 1e-9)
+            if diff > 0.25:
+                data_notes.append(
+                    f"Provider EV/EBITDA ({ev_to_ebitda:.2f}) does not reconcile with "
+                    f"displayed EV and EBITDA ({calculated_ev_ebitda:.2f})."
+                )
 
     fundamentals = pd.DataFrame([
         ["Data Source", data.get("source_used")],
+        ["Next Earnings Date", earnings_date],
         ["Market Cap", fmt_large_number(market_cap)],
+        ["Enterprise Value", fmt_large_number(enterprise_value)],
+        ["Total Debt", fmt_large_number(total_debt)],
+        ["Cash", fmt_large_number(cash)],
+        ["Revenue", fmt_large_number(revenue)],
+        ["EBITDA", fmt_large_number(ebitda)],
+        ["Net Income", fmt_large_number(net_income)],
+        ["Trailing EPS", fmt_num(trailing_eps)],
+        ["Forward EPS", fmt_num(forward_eps)],
         ["Trailing P/E", fmt_num(trailing_pe)],
         ["Forward P/E", fmt_num(forward_pe)],
         ["EV / EBITDA", fmt_num(ev_to_ebitda)],
         ["PEG", fmt_num(peg)],
         ["Revenue Growth", "N/A" if rg_pts is None else f"{rg_pts:.1f}%"],
         ["EBITDA Margin", "N/A" if em_pts is None else f"{em_pts:.1f}%"],
+        ["Gross Margin", "N/A" if gross_margin is None else f"{normalize_percent_like(gross_margin):.1f}%"],
+        ["Operating Margin", "N/A" if operating_margin is None else f"{normalize_percent_like(operating_margin):.1f}%"],
+        ["Net Margin", "N/A" if net_margin is None else f"{normalize_percent_like(net_margin):.1f}%"],
+        ["ROE", "N/A" if roe is None else f"{normalize_percent_like(roe):.1f}%"],
+        ["ROA", "N/A" if roa is None else f"{normalize_percent_like(roa):.1f}%"],
+        ["Current Ratio", fmt_num(current_ratio)],
+        ["Debt / EBITDA", fmt_num(debt_to_ebitda)],
+        ["Free Cash Flow", fmt_large_number(free_cash_flow)],
+        ["FCF Margin", "N/A" if fcf_margin is None else f"{normalize_percent_like(fcf_margin):.1f}%"],
+        ["Price / Sales", fmt_num(price_to_sales)],
+        ["Price / Book", fmt_num(price_to_book)],
+        ["Price / FCF", fmt_num(price_to_fcf)],
         ["Rule of 40", fmt_num(rule_of_40)],
         ["52 Week High", fmt_num(fifty_two_high)],
         ["52 Week Low", fmt_num(fifty_two_low)],
@@ -753,6 +1899,8 @@ def load_analysis(ticker, period, fmp_api_key, finnhub_api_key):
 
     return {
         "ticker": ticker,
+        "company_name": company_name,
+        "earnings_date": earnings_date,
         "data": stock_data,
         "fundamentals": fundamentals,
         "latest_close": latest_close,
@@ -775,39 +1923,147 @@ def load_analysis(ticker, period, fmp_api_key, finnhub_api_key):
         "opt": opt,
         "ev_rel": ev_rel,
         "source_used": data.get("source_used"),
-        "atm_iv": iv_data.get("atm_iv"),
+        "metric_sources": data.get("metric_sources", {}),
+        "data_notes": data_notes,
+        "ev_baseline": selected_ev_baseline,
+        "ev_baseline_source": ev_baseline_source,
+        "peer_ev_table": peer_analysis["peer_table"],
+        "peer_count": peer_analysis["peer_count"],
+        "raw_debug_table": raw_debug_table,
+        "market_cap": market_cap,
+        "enterprise_value": enterprise_value,
+        "total_debt": total_debt,
+        "cash": cash,
+        "revenue": revenue,
+        "ebitda": ebitda,
+        "net_income": net_income,
+        "trailing_eps": trailing_eps,
+        "forward_eps": forward_eps,
+        "revenue_growth": revenue_growth,
+        "ebitda_margin": ebitda_margin,
+        "implied_volatility": iv_data.get("implied_volatility"),
         "iv_percentile_approx": iv_data.get("iv_percentile_approx"),
         "iv_regime": iv_data.get("iv_regime"),
         "iv_note": iv_data.get("iv_note"),
+        "iv_rank": iv_rank,
+        "iv_percentile_engine": iv_percentile_engine,
+        "iv_decision": iv_decision,
+        "near_earnings": near_earnings,
+        "gross_margin": gross_margin,
+        "operating_margin": operating_margin,
+        "net_margin": net_margin,
+        "roe": roe,
+        "roa": roa,
+        "current_ratio": current_ratio,
+        "free_cash_flow": free_cash_flow,
+        "operating_cash_flow": operating_cash_flow,
+        "fcf_margin": fcf_margin,
+        "debt_to_ebitda": debt_to_ebitda,
+        "price_to_sales": price_to_sales,
+        "price_to_book": price_to_book,
+        "price_to_fcf": price_to_fcf,
+        "quality_score": quality.get("score"),
+        "quality_grade": quality.get("grade"),
+        "quality_coverage": quality.get("coverage"),
+        "quality_breakdown": quality_breakdown,
+        "quality_metric_breakdown": quality_metric_breakdown,
+        "valuation_score": valuation_score_object.get("score"),
+        "valuation_grade": valuation_score_object.get("grade"),
+        "valuation_coverage": valuation_score_object.get("coverage"),
+        "valuation_breakdown": valuation_breakdown,
+        "timing_score_100": investment.get("timing_100"),
+        "investment_score": investment.get("score"),
+        "investment_grade": investment.get("grade"),
+        "investment_coverage": investment.get("coverage"),
     }
 
 
 # =========================
-# WATCHLIST SCANNER
+# WATCHLIST / UNIVERSE SCANNER
 # =========================
 @st.cache_data(ttl=600)
-def scan_watchlist(tickers, period, fmp_api_key, finnhub_api_key):
+def scan_watchlist(tickers, period, fmp_api_key, finnhub_api_key, manual_ev_baseline=22.0):
     rows = []
+
     for ticker in tickers:
         try:
-            result = load_analysis(ticker, period, fmp_api_key, finnhub_api_key)
+            result = load_analysis(
+                ticker,
+                period,
+                fmp_api_key,
+                finnhub_api_key,
+                ev_baseline_method="Manual baseline",
+                manual_ev_baseline=manual_ev_baseline,
+                enable_peer_baseline=False,
+            )
             if result is None:
                 continue
+
+            options_score = options_setup_score(
+                trend_state=result["trend_state"],
+                timing_score=result["timing_score"],
+                iv_percentile_approx=result.get("iv_percentile_engine"),
+                iv_regime=result.get("iv_regime"),
+                options_view=result["options_view"]
+            )
+
+            setup_label = options_setup_label(
+                iv_percentile_approx=result.get("iv_percentile_engine"),
+                iv_regime=result.get("iv_regime"),
+                options_view=result["options_view"],
+                trend_state=result["trend_state"]
+            )
+
             rows.append({
                 "Ticker": ticker,
-                "Source": result["source_used"],
-                "Last Close": fmt_num(result["latest_close"]),
-                "Fwd P/E": fmt_num(result["forward_pe"]),
-                "PEG": fmt_num(result["peg"]),
-                "Rule of 40": fmt_num(result["rule_of_40"]),
+                "Last Close": to_float(result["latest_close"]),
                 "Trend": result["trend_state"],
+                "Timing Score": to_float(result["timing_score"]),
                 "Timing": f'{result["timing_score"]} ({result["timing_label"]})',
+                "Impl. Vol.": None if result.get("implied_volatility") is None else round(result["implied_volatility"] * 100, 1),
+                "IV %ile": None if result.get("iv_percentile_engine") is None else round(result["iv_percentile_engine"], 0),
+                "IV Rank": None if result.get("iv_rank") is None else round(result["iv_rank"], 0),
+                "IV Regime": result.get("iv_regime", "N/A"),
+                "Setup Label": setup_label,
+                "Options Score": options_score,
                 "Valuation Style": result["smart_view"]["valuation_style"],
                 "Trade Idea": result["options_view"],
+                "Fwd P/E": to_float(result["forward_pe"]),
+                "PEG": to_float(result["peg"]),
+                "Rule of 40": to_float(result["rule_of_40"]),
+                "Quality Score": to_float(result.get("quality_score")),
+                "Valuation Score": to_float(result.get("valuation_score")),
+                "Investment Score": to_float(result.get("investment_score")),
+                "Source": result["source_used"],
             })
         except Exception:
             continue
-    return pd.DataFrame(rows)
+
+    df = pd.DataFrame(rows)
+    if df.empty:
+        return df
+
+    df = df.sort_values(
+        by=["Options Score", "Timing Score", "IV %ile"],
+        ascending=[False, False, False]
+    ).reset_index(drop=True)
+
+    display_df = df.copy()
+    for col in ["Last Close", "Fwd P/E", "PEG", "Rule of 40"]:
+        display_df[col] = display_df[col].apply(lambda x: "N/A" if pd.isna(x) else f"{x:.2f}")
+
+    for col in ["Quality Score", "Valuation Score", "Investment Score"]:
+        if col in display_df.columns:
+            display_df[col] = display_df[col].apply(
+                lambda x: "N/A" if pd.isna(x) else f"{x:.0f}"
+            )
+
+    display_df["Impl. Vol."] = display_df["Impl. Vol."].apply(lambda x: "N/A" if pd.isna(x) else f"{x:.1f}%")
+    display_df["IV %ile"] = display_df["IV %ile"].apply(lambda x: "N/A" if pd.isna(x) else f"{int(x)}")
+    display_df["IV Rank"] = display_df["IV Rank"].apply(lambda x: "N/A" if pd.isna(x) else f"{int(x)}")
+    display_df["Options Score"] = display_df["Options Score"].apply(lambda x: "N/A" if pd.isna(x) else f"{int(x)}")
+
+    return display_df
 
 
 # =========================
@@ -816,20 +2072,34 @@ def scan_watchlist(tickers, period, fmp_api_key, finnhub_api_key):
 st.sidebar.title("Controls")
 
 watchlist = ["NVDA", "MSFT", "AAPL", "AMZN", "META", "GOOGL", "AVGO", "MU", "NFLX", "ORCL"]
-ticker = st.sidebar.text_input("Ticker", value="NVDA").upper()
+ticker = st.sidebar.text_input("Ticker", value="").upper().strip()
 period = st.sidebar.selectbox("Period", ["1mo", "3mo", "6mo", "1y", "2y", "5y"], index=3)
 
-MP_API_KEY = "NPokK3Jd0JHioczIHUGC8cfivIE04qiS"
-FINNHUB_API_KEY = "d7g0q1hr01qqb8rhu0rgd7g0q1hr01qqb8rhu0s0"
+ev_baseline_method = st.sidebar.selectbox(
+    "EV / EBITDA comparison method",
+    ["Industry peer median", "Manual baseline"],
+    index=0,
+    help="Peer median is the default. The manual value is used when peer data is unavailable.",
+)
+manual_ev_baseline = st.sidebar.number_input(
+    "Manual EV / EBITDA fallback",
+    min_value=1.0,
+    max_value=100.0,
+    value=22.0,
+    step=0.5,
+    help="Used only when peer data is insufficient, or when Manual baseline is selected.",
+)
 
+fmp_api_key = FMP_API_KEY
+finnhub_api_key = FINNHUB_API_KEY
 
 run = st.sidebar.button("Run Analysis", use_container_width=True)
 
 # =========================
 # MAIN UI
 # =========================
-st.title("📈 Stock Trading Dashboard Pro")
-st.caption("Hybrid FMP + Finnhub + Yahoo Backup engine with technicals, valuation, entry zones, and options ideas.")
+st.title("📈 Stock Dashboard Pro v4")
+st.caption("Quality + valuation scoring, Yahoo-consistent ratios, peer-median EV/EBITDA, technical timing, options ideas, and raw-data audit.")
 
 tab_overview, tab_technical, tab_valuation, tab_options, tab_scanner = st.tabs(
     ["Overview", "Technical", "Valuation", "Options", "Scanner"]
@@ -837,37 +2107,77 @@ tab_overview, tab_technical, tab_valuation, tab_options, tab_scanner = st.tabs(
 
 result = None
 if run:
-    result = load_analysis(ticker, period, fmp_api_key, finnhub_api_key)
-    if result is None:
-        st.error(f"No data found for {ticker}.")
+    if not ticker:
+        st.warning("Please enter a ticker.")
+    else:
+        result = load_analysis(
+            ticker,
+            period,
+            fmp_api_key,
+            finnhub_api_key,
+            ev_baseline_method=ev_baseline_method,
+            manual_ev_baseline=manual_ev_baseline,
+            enable_peer_baseline=True,
+        )
+        if result is None:
+            st.error(f"No data found for {ticker}.")
 
 with tab_overview:
     if result is None:
-        st.info("Choose a ticker in the sidebar and click Run Analysis.")
+        st.info("Enter a ticker in the sidebar and click Run Analysis.")
     else:
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Last Close", fmt_num(result["latest_close"]))
-        c2.metric("Trailing P/E", fmt_num(result["trailing_pe"]))
-        c3.metric("Forward P/E", fmt_num(result["forward_pe"]))
-        c4.metric("EV / EBITDA", fmt_num(result["ev_to_ebitda"]))
+        st.markdown(
+            f"<div class='company-name'>{result['company_name']}</div>",
+            unsafe_allow_html=True
+        )
+        st.markdown(
+            f"<div class='earnings-line'><strong>Next Earnings Date:</strong> {result['earnings_date']}</div>",
+            unsafe_allow_html=True
+        )
 
-        c5, c6, c7, c8 = st.columns(4)
-        c5.metric("PEG", fmt_num(result["peg"]))
-        c6.metric("Rule of 40", fmt_num(result["rule_of_40"]))
-        c7.metric("Trend", result["trend_state"])
-        c8.metric("Timing", f'{result["timing_score"]} ({result["timing_label"]})')
+        render_overview_metrics(result)
+
+        st.subheader("V4 Investment Scorecard")
+        render_score_cards(result)
+        st.caption(
+            "Investment Score = 50% Business Quality + 35% Valuation + "
+            "15% Technical Timing. Scores use only available data and show coverage."
+        )
 
         st.subheader("Decision Panel")
         d1, d2 = st.columns(2)
+
         with d1:
-            st.write(f"**Data Source:** {result['source_used']}")
-            st.write(f"**Valuation Verdict:** {result['valuation']}")
-            st.write(f"**Smart Valuation Style:** {result['smart_view']['valuation_style']}")
-            st.write(f"**Growth-Adjusted View:** {result['smart_view']['growth_adjusted_view']}")
+            st.markdown(
+                f"<div class='decision-line'><strong>Data Source:</strong> {result['source_used']}</div>",
+                unsafe_allow_html=True
+            )
+            st.markdown(
+                f"<div class='decision-line'><strong>Valuation Verdict:</strong> {result['valuation']}</div>",
+                unsafe_allow_html=True
+            )
+            st.markdown(
+                f"<div class='decision-line'><strong>Smart Valuation Style:</strong> {result['smart_view']['valuation_style']}</div>",
+                unsafe_allow_html=True
+            )
+            st.markdown(
+                f"<div class='decision-line'><strong>Growth-Adjusted View:</strong> {result['smart_view']['growth_adjusted_view']}</div>",
+                unsafe_allow_html=True
+            )
+
         with d2:
-            st.write(f"**Setup Verdict:** {result['setup_verdict']}")
-            st.write(f"**Trade Decision:** {result['trade_view']}")
-            st.write(f"**Options Idea:** {result['options_view']}")
+            st.markdown(
+                f"<div class='decision-line'><strong>Setup Verdict:</strong> {result['setup_verdict']}</div>",
+                unsafe_allow_html=True
+            )
+            st.markdown(
+                f"<div class='decision-line'><strong>Trade Decision:</strong> {result['trade_view']}</div>",
+                unsafe_allow_html=True
+            )
+            st.markdown(
+                f"<div class='decision-line'><strong>Options Idea:</strong> {result['options_view']}</div>",
+                unsafe_allow_html=True
+            )
 
         st.subheader("Entry Zones")
         z1, z2, z3, z4 = st.columns(4)
@@ -876,6 +2186,21 @@ with tab_overview:
         z3.metric("Resistance 1", fmt_num(result["zones"]["resistance_1"]))
         z4.metric("Resistance 2", fmt_num(result["zones"]["resistance_2"]))
         st.write(f"**Buy Zone:** {fmt_num(result['zones']['buy_zone_low'])} - {fmt_num(result['zones']['buy_zone_high'])}")
+
+        with st.expander("Raw Data Debug", expanded=False):
+            st.caption(
+                "Use this section to verify the exact raw values and source used for each metric. "
+                "Valuation ratios are Yahoo-first to avoid mixing incompatible provider definitions."
+            )
+            st.dataframe(
+                result["raw_debug_table"],
+                use_container_width=True,
+                hide_index=True
+            )
+            if result.get("data_notes"):
+                st.warning("\n".join(f"• {note}" for note in result["data_notes"]))
+            else:
+                st.success("No major reconciliation warnings detected.")
 
 with tab_technical:
     if result is None:
@@ -923,12 +2248,78 @@ with tab_valuation:
     if result is None:
         st.info("Run Analysis to view valuation.")
     else:
-        st.subheader("Fundamentals Table")
-        st.dataframe(result["fundamentals"], use_container_width=True, hide_index=True)
+        st.subheader("V4 Quality and Valuation Scores")
+        render_score_cards(result)
 
+        q1, q2 = st.columns(2)
+        with q1:
+            st.markdown("#### Business Quality Categories")
+            quality_display = result["quality_breakdown"].copy()
+            if not quality_display.empty:
+                quality_display["Score"] = quality_display["Score"].apply(
+                    lambda x: "N/A" if pd.isna(x) else f"{x:.0f}"
+                )
+                quality_display["Coverage"] = quality_display["Coverage"].apply(
+                    lambda x: "N/A" if pd.isna(x) else f"{x:.0f}%"
+                )
+                st.dataframe(
+                    quality_display,
+                    use_container_width=True,
+                    hide_index=True
+                )
+
+        with q2:
+            st.markdown("#### Valuation Components")
+            valuation_display = result["valuation_breakdown"].copy()
+            if not valuation_display.empty:
+                valuation_display["Score"] = valuation_display["Score"].apply(
+                    lambda x: "N/A" if pd.isna(x) else f"{x:.0f}"
+                )
+                st.dataframe(
+                    valuation_display,
+                    use_container_width=True,
+                    hide_index=True
+                )
+
+        with st.expander("View detailed quality metrics"):
+            quality_metric_display = result["quality_metric_breakdown"].copy()
+            if not quality_metric_display.empty:
+                quality_metric_display["Score"] = quality_metric_display["Score"].apply(
+                    lambda x: "N/A" if pd.isna(x) else f"{x:.0f}"
+                )
+                st.dataframe(
+                    quality_metric_display,
+                    use_container_width=True,
+                    hide_index=True
+                )
+
+        st.caption(
+            "These scores are screening aids, not guarantees. Thresholds are "
+            "transparent and can be adjusted later by sector."
+        )
+
+        st.divider()
         st.subheader("EV / EBITDA Relative View")
+        st.write(f"**Benchmark source:** {result['ev_baseline_source']}")
         st.write(f"**Status:** {result['ev_rel']['status']}")
         st.write(f"**Comparison:** {result['ev_rel']['comparison']}")
+        st.caption(
+            "This compares valuation multiples. The percentage is not an estimate "
+            "of the stock's expected price increase or decrease."
+        )
+
+        peer_table = result.get("peer_ev_table")
+        if isinstance(peer_table, pd.DataFrame) and not peer_table.empty:
+            with st.expander("View comparable companies used in the median"):
+                peer_display = peer_table.copy()
+                peer_display["EV / EBITDA"] = peer_display["EV / EBITDA"].map(
+                    lambda x: f"{x:.2f}x"
+                )
+                st.dataframe(peer_display, use_container_width=True, hide_index=True)
+
+        st.divider()
+        st.subheader("Fundamentals Table")
+        st.dataframe(result["fundamentals"], use_container_width=True, hide_index=True)
 
 with tab_options:
     if result is None:
@@ -946,39 +2337,46 @@ with tab_options:
 
         st.subheader("Implied Volatility")
         iv1, iv2, iv3 = st.columns(3)
-        iv1.metric("ATM IV", "N/A" if result["atm_iv"] is None else f"{result['atm_iv'] * 100:.1f}%")
-        iv2.metric(
-            "IV Percentile (Approx.)",
-            "N/A" if result["iv_percentile_approx"] is None else f"{result['iv_percentile_approx']:.0f}"
+        iv1.metric(
+            "Impl. Vol.",
+            "N/A" if result["implied_volatility"] is None else f"{result['implied_volatility'] * 100:.1f}%"
         )
-        iv3.metric("IV Regime", result["iv_regime"])
+        iv2.metric(
+            "IV Rank (Approx.)",
+            "N/A" if result["iv_rank"] is None else f"{result['iv_rank']:.0f}"
+        )
+        iv3.metric(
+            "IV Percentile (Approx.)",
+            "N/A" if result["iv_percentile_engine"] is None else f"{result['iv_percentile_engine']:.0f}"
+        )
 
         st.caption(result["iv_note"])
 
-        st.subheader("IV-Based Interpretation")
-        atm_iv = result["atm_iv"]
-        iv_pct = result["iv_percentile_approx"]
-
-        if atm_iv is None:
-            st.write("**IV Takeaway:** IV data unavailable for this ticker from Yahoo.")
-        else:
-            if iv_pct is not None:
-                if iv_pct >= 70:
-                    st.write("**IV Takeaway:** Volatility is relatively elevated. Better environment for premium selling strategies.")
-                elif iv_pct <= 30:
-                    st.write("**IV Takeaway:** Volatility is relatively low. Better environment for directional long options like ITM LEAPS.")
-                else:
-                    st.write("**IV Takeaway:** Volatility is in a middle range. Use balanced strategy selection.")
-            else:
-                if atm_iv >= 0.45:
-                    st.write("**IV Takeaway:** High IV environment. Bull put spreads may be more attractive than outright call buying.")
-                elif atm_iv <= 0.25:
-                    st.write("**IV Takeaway:** Lower IV environment. Long calls / LEAPS are relatively more attractive.")
-                else:
-                    st.write("**IV Takeaway:** Moderate IV environment. Either defined-risk spreads or LEAPS can work depending on setup.")
+        st.subheader("IV-Based Decision")
+        st.markdown(
+            f"<div class='decision-line'><strong>Decision:</strong> {result['iv_decision']['decision']}</div>",
+            unsafe_allow_html=True
+        )
+        st.markdown(
+            f"<div class='decision-line'><strong>Typical Strategy:</strong> {result['iv_decision']['typical_strategy']}</div>",
+            unsafe_allow_html=True
+        )
+        st.markdown(
+            f"<div class='decision-line'><strong>Explanation:</strong> {result['iv_decision']['explanation']}</div>",
+            unsafe_allow_html=True
+        )
+        st.markdown(
+            f"<div class='decision-line'><strong>IV Regime:</strong> {result['iv_regime']}</div>",
+            unsafe_allow_html=True
+        )
+        st.markdown(
+            f"<div class='decision-line'><strong>Near Earnings:</strong> {result['near_earnings']}</div>",
+            unsafe_allow_html=True
+        )
 
 with tab_scanner:
     st.subheader("Scanner")
+    st.caption("Ranks names by trend, timing, and options attractiveness using IV and setup quality.")
 
     universe = st.selectbox(
         "Choose universe",
@@ -1011,12 +2409,25 @@ with tab_scanner:
     run_universe_scan = st.button("Run Universe Scan", key="run_universe_scan")
 
     if run_universe_scan:
-        universe_df = scan_watchlist(scan_tickers, period, fmp_api_key, finnhub_api_key)
+        universe_df = scan_watchlist(
+            scan_tickers,
+            period,
+            fmp_api_key,
+            finnhub_api_key,
+            manual_ev_baseline=manual_ev_baseline,
+        )
 
         if universe_df is None or universe_df.empty:
             st.warning("No scan results returned.")
         else:
-            st.dataframe(universe_df, use_container_width=True, hide_index=True)
+            preferred_cols = [
+                "Ticker", "Last Close", "Trend", "Timing", "Impl. Vol.", "IV %ile",
+                "IV Rank", "IV Regime", "Setup Label", "Options Score",
+                "Valuation Style", "Trade Idea", "Quality Score",
+                "Valuation Score", "Investment Score", "Fwd P/E", "PEG",
+                "Rule of 40", "Source"
+            ]
+            existing_cols = [c for c in preferred_cols if c in universe_df.columns]
+            st.dataframe(universe_df[existing_cols], use_container_width=True, hide_index=True)
     else:
         st.info("Choose a universe and click Run Universe Scan.")
-        
